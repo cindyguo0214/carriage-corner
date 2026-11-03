@@ -1,0 +1,448 @@
+// DOM 疊層：中文輸入、清晰文字與無障礙都在這裡處理，不畫進 canvas（docs/PRD.md §6.2）
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  LINES, looksLikeContact, NOTE_MAX_GRAPHEMES, splitGraphemes, type GlowKind, type PaxState,
+} from '@cc/shared';
+import { mixer, type Channel } from '../audio/AmbientMixer';
+import { bridge } from '../gameBridge';
+import { actions, devParams, store, useApp } from '../store';
+import { TicketModal } from './TicketModal';
+
+const STATES: { state: PaxState; icon: string; label: string }[] = [
+  { state: 'idle', icon: '🪟', label: '看窗外' },
+  { state: 'coffee', icon: '☕', label: '喝咖啡' },
+  { state: 'music', icon: '🎧', label: '戴耳機' },
+  { state: 'read', icon: '📖', label: '閱讀・番茄鐘' },
+  { state: 'sleep', icon: '😴', label: '補眠' },
+];
+
+const CHANNELS: { ch: Channel; icon: string; label: string }[] = [
+  { ch: 'rail', icon: '🚃', label: '鐵軌行駛' },
+  { ch: 'rain', icon: '🌧', label: '車窗雨聲' },
+  { ch: 'lofi', icon: '🎹', label: 'Lo-Fi 鋼琴' },
+];
+
+function useTheme() {
+  const night = useApp(s => s.mode === 'night');
+  return {
+    night,
+    panel: night ? 'bg-smoke-soft/90 text-oat ring-1 ring-white/10' : 'bg-oat/90 text-ink ring-1 ring-ink/10',
+    chip: night ? 'bg-white/10 hover:bg-white/20' : 'bg-ink/5 hover:bg-ink/10',
+    chipOn: night ? 'bg-lamp text-smoke' : 'bg-ink text-oat',
+  };
+}
+
+export function Hud() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') actions.setUi({ mixerOpen: false, composerOpen: false, ticketOpen: false, glowMenu: null, noteMenu: null });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  return (
+    <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 text-sm sm:p-4">
+      <div className="flex flex-col gap-2">
+        <TopBar />
+        <Toast />
+      </div>
+      <div className="flex flex-col items-center gap-3">
+        <Subtitle />
+        <BottomBar />
+      </div>
+      <GlowMenu />
+      <NoteMenu />
+      <NoteComposer />
+      <TicketModal />
+    </div>
+  );
+}
+
+function TopBar() {
+  const theme = useTheme();
+  const lineId = useApp(s => s.line);
+  const train = useApp(s => s.train);
+  const mode = useApp(s => s.mode);
+  const seat = useApp(s => s.selfSeat);
+  const net = useApp(s => s.net);
+  const line = LINES[lineId];
+  const dir = train.to > train.from ? 1 : -1;
+  const terminal = line.stations[dir === 1 ? line.stations.length - 1 : 0];
+  const next = line.stations[train.to];
+  const [clock, setClock] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setClock(new Date()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+  const hhmm = clock.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-2">
+      <div className={`pointer-events-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap rounded px-3 py-2 ${theme.panel}`}>
+        <span className="flex items-center gap-1.5 font-medium">
+          <span className="inline-block size-2.5 rounded-[2px]" style={{ background: line.color }} />
+          {line.id} {line.zh}
+        </span>
+        <span className="opacity-70">往 {terminal.zh}</span>
+        <span aria-live="polite">
+          {train.phase === 'dwell' ? <>到站 ▸ <b>{next.zh}</b></> : <>下一站 ▸ <b>{next.zh}</b></>}
+        </span>
+      </div>
+      <div className={`pointer-events-auto ml-auto flex shrink-0 items-center gap-2 rounded px-3 py-2 ${theme.panel}`}>
+        <NetBadge net={net} />
+        {seat && <span className="whitespace-nowrap opacity-70">Seat {seat}</span>}
+        <span aria-hidden>{mode === 'night' ? '🌃' : '🌅'}</span>
+        <span className="tabular-nums">{hhmm}</span>
+        {devParams.dev && (
+          <button
+            className={`whitespace-nowrap rounded px-2 py-0.5 text-xs ${theme.chip}`}
+            onClick={() => store.setState({ mode: mode === 'night' ? 'morning' : 'night' })}
+          >
+            切換晨／夜
+          </button>
+        )}
+      </div>
+    </header>
+  );
+}
+
+function NetBadge({ net }: { net: 'online' | 'reconnecting' | 'offline' }) {
+  const label = { online: '同車連線中', reconnecting: '訊號較弱，重新連線中', offline: '離線模式：車廂裡的人是本機模擬' }[net];
+  const color = { online: 'bg-sage', reconnecting: 'bg-lamp animate-pulse', offline: 'bg-rose' }[net];
+  return (
+    <span title={label} aria-label={label} className="flex items-center">
+      <span className={`inline-block size-2 rounded-full ${color}`} />
+    </span>
+  );
+}
+
+/** 只有自己看得到的輕提示：例如收到別人遞來的咖啡 */
+function Toast() {
+  const theme = useTheme();
+  const toast = useApp(s => s.toast);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!toast) return;
+    setVisible(true);
+    const id = setTimeout(() => setVisible(false), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
+  if (!toast) return null;
+  return (
+    <p
+      role="status"
+      className={`self-center rounded px-3 py-1.5 transition-opacity duration-700 ${theme.panel} ${visible ? 'opacity-100' : 'opacity-0'}`}
+    >
+      {toast.text}
+    </p>
+  );
+}
+
+function Subtitle() {
+  const subtitle = useApp(s => s.subtitle);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!subtitle) return;
+    setVisible(true);
+    const id = setTimeout(() => setVisible(false), 7000);
+    return () => clearTimeout(id);
+  }, [subtitle]);
+  if (!subtitle) return null;
+  const [zh, en] = subtitle.text.split('｜');
+  return (
+    <p
+      aria-live="polite"
+      className={`max-w-xl rounded bg-black/45 px-4 py-2 text-center leading-relaxed text-oat transition-opacity duration-700 ${visible ? 'opacity-100' : 'opacity-0'}`}
+    >
+      {zh}
+      {en && <span className="block text-xs opacity-75">{en}</span>}
+    </p>
+  );
+}
+
+function BottomBar() {
+  const theme = useTheme();
+  const selfState = useApp(s => s.selfState);
+  const mixerOpen = useApp(s => s.ui.mixerOpen);
+  return (
+    <div className="relative flex flex-col items-center">
+      {mixerOpen && <MixerPanel />}
+      <nav aria-label="乘客動作" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
+        {STATES.map(s => (
+          <button
+            key={s.state}
+            aria-pressed={selfState === s.state}
+            aria-label={s.label}
+            title={s.label}
+            className={`rounded px-2.5 py-1.5 text-base transition-colors ${selfState === s.state ? theme.chipOn : theme.chip}`}
+            onClick={() => {
+              actions.setSelfState(s.state);
+              if (s.state === 'music') {
+                void mixer.setChannel('lofi', true);
+                actions.setUi({ mixerOpen: true });
+              }
+            }}
+          >
+            {s.icon}
+          </button>
+        ))}
+        <Pomodoro />
+        <span className="mx-1 h-6 w-px bg-current opacity-20" aria-hidden />
+        <button className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => actions.setUi({ composerOpen: true, glowMenu: null })}>
+          ✍ 寫在車窗
+        </button>
+        <button
+          aria-expanded={mixerOpen}
+          className={`rounded px-2.5 py-1.5 ${mixerOpen ? theme.chipOn : theme.chip}`}
+          onClick={() => actions.setUi({ mixerOpen: !mixerOpen })}
+        >
+          🎚 音效
+        </button>
+        <button
+          className={`rounded px-2.5 py-1.5 ${theme.chip}`}
+          onClick={() => actions.setUi({ ticketOpen: true, mixerOpen: false, glowMenu: null, noteMenu: null })}
+        >
+          🎫 車票
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+function Pomodoro() {
+  const pomodoro = useApp(s => s.pomodoro);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!pomodoro) {
+      document.title = '車廂角落 Carriage Corner';
+      return;
+    }
+    const tick = () => {
+      const t = Date.now();
+      setNow(t);
+      const left = pomodoro.startedAt + pomodoro.durationMs - t;
+      if (left <= 0) {
+        mixer.playPomodoroBell();
+        if (pomodoro.kind === 'focus') {
+          store.setState(s => ({ pomodorosDone: s.pomodorosDone + 1 }));
+          actions.say('這一段專注到站了。休息五分鐘，看看窗外吧。');
+          store.setState({ pomodoro: { kind: 'break', startedAt: t, durationMs: 5 * 60_000 } });
+        } else {
+          store.setState({ pomodoro: { kind: 'focus', startedAt: t, durationMs: devParams.focusMin * 60_000 } });
+        }
+        return;
+      }
+      document.title = `${pomodoro.kind === 'focus' ? '📖' : '☕'} ${fmt(left)} · 車廂角落`;
+    };
+    tick();
+    // 以時間戳計算剩餘時間，背景分頁被節流也不會走歪
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [pomodoro]);
+  if (!pomodoro) return null;
+  const left = Math.max(0, pomodoro.startedAt + pomodoro.durationMs - now);
+  return (
+    <span className="px-1.5 tabular-nums" aria-label={pomodoro.kind === 'focus' ? '專注剩餘時間' : '休息剩餘時間'}>
+      {pomodoro.kind === 'focus' ? '' : '休息 '}
+      {fmt(left)}
+    </span>
+  );
+}
+
+const fmt = (ms: number) => {
+  const s = Math.ceil(ms / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+
+function MixerPanel() {
+  const theme = useTheme();
+  const settings = useSyncExternalStore(fn => mixer.subscribe(fn), () => mixer.state);
+  return (
+    <section aria-label="環境音效" className={`pointer-events-auto absolute bottom-full mb-2 w-72 rounded p-3 ${theme.panel}`}>
+      <ul className="space-y-2">
+        {CHANNELS.map(c => (
+          <li key={c.ch} className="flex items-center gap-2">
+            <button
+              aria-pressed={settings.on[c.ch]}
+              className={`w-28 shrink-0 rounded px-2 py-1 text-left ${settings.on[c.ch] ? theme.chipOn : theme.chip}`}
+              onClick={() => void mixer.setChannel(c.ch, !settings.on[c.ch])}
+            >
+              {c.icon} {c.label}
+            </button>
+            <input
+              type="range" min={0} max={1} step={0.01} aria-label={`${c.label}音量`}
+              value={settings.level[c.ch]}
+              onChange={e => void mixer.setLevel(c.ch, Number(e.target.value))}
+              className="w-full accent-rose"
+            />
+          </li>
+        ))}
+        <li className="flex items-center gap-2 pt-1">
+          <span className="w-28 shrink-0 px-2 opacity-80">🔈 主音量</span>
+          <input
+            type="range" min={0} max={1} step={0.01} aria-label="主音量"
+            value={settings.master}
+            onChange={e => mixer.setMaster(Number(e.target.value))}
+            className="w-full accent-rose"
+          />
+        </li>
+      </ul>
+      <DndToggle />
+    </section>
+  );
+}
+
+function DndToggle() {
+  const theme = useTheme();
+  const dnd = useApp(s => s.dnd);
+  return (
+    <button
+      aria-pressed={dnd}
+      onClick={() => store.setState({ dnd: !dnd })}
+      className={`mt-3 w-full rounded px-2 py-1 text-left ${dnd ? theme.chipOn : theme.chip}`}
+    >
+      🔕 勿擾：{dnd ? '不接收別人的微光' : '關閉'}
+    </button>
+  );
+}
+
+/** 點別人寫在車窗上的字：不能回覆、不能按讚，只能擦掉（只有自己看不到）或檢舉 */
+function NoteMenu() {
+  const theme = useTheme();
+  const menu = useApp(s => s.ui.noteMenu);
+  if (!menu) return null;
+  const close = () => actions.setUi({ noteMenu: null });
+  const x = Math.min(menu.x, window.innerWidth - 240);
+  const y = Math.max(menu.y - 64, 8);
+  return (
+    <div role="menu" aria-label="車窗上的留言" className={`pointer-events-auto fixed flex gap-1 rounded p-1.5 ${theme.panel}`} style={{ left: x, top: y }}>
+      <button role="menuitem" autoFocus className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => { bridge.game?.wipeNote(menu.window); close(); }}>
+        🧽 擦掉
+      </button>
+      <button role="menuitem" className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => { void bridge.game?.reportNote(menu.window); close(); actions.toast('謝謝你，我們會處理。'); }}>
+        🚩 檢舉
+      </button>
+      <button role="menuitem" className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => actions.setUi({ noteMenu: null, composerOpen: true })}>
+        ✍ 寫自己的
+      </button>
+    </div>
+  );
+}
+
+function GlowMenu() {
+  const theme = useTheme();
+  const menu = useApp(s => s.ui.glowMenu);
+  if (!menu) return null;
+  const send = (kind: GlowKind) => {
+    bridge.game?.glow(menu.seat, kind);
+    actions.setUi({ glowMenu: null });
+  };
+  const x = Math.min(menu.x, window.innerWidth - 180);
+  const y = Math.max(menu.y - 64, 8);
+  return (
+    <div
+      role="menu"
+      aria-label={`對 Seat ${menu.seat} 送出微光`}
+      className={`pointer-events-auto fixed flex gap-1 rounded p-1.5 ${theme.panel}`}
+      style={{ left: x, top: y }}
+    >
+      <button role="menuitem" autoFocus className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => send('coffee')}>☕ 遞上咖啡</button>
+      <button role="menuitem" className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => send('cheer')}>👏 點頭加油</button>
+    </div>
+  );
+}
+
+// UX 文案（docs/PRD.md 附錄 C）
+const NOTE_ERRORS = {
+  FILTERED: '這句話被霧氣吃掉了，換個說法試試？',
+  RATE_LIMITED: '車窗還很濕，等下一站再寫吧。',
+  NOTES_PAUSED: '車窗正在清潔中，晚點再來寫。',
+  NETWORK: '訊號不太好，再試一次？',
+} as const;
+
+function NoteComposer() {
+  const theme = useTheme();
+  const open = useApp(s => s.ui.composerOpen);
+  const mode = useApp(s => s.mode);
+  const [text, setText] = useState('');
+  const [error, setError] = useState('');
+  const [care, setCare] = useState(false);
+  const [sending, setSending] = useState(false);
+  const composing = useRef(false);
+  if (!open) return null;
+
+  const count = splitGraphemes(text).length;
+  const close = () => {
+    setText('');
+    setError('');
+    setCare(false);
+    actions.setUi({ composerOpen: false });
+  };
+  const clamp = (v: string) => splitGraphemes(v).slice(0, NOTE_MAX_GRAPHEMES).join('');
+  const submit = async () => {
+    const t = text.trim();
+    if (!t || sending || !bridge.game) return;
+    if (looksLikeContact(t)) {
+      setError(NOTE_ERRORS.FILTERED);
+      return;
+    }
+    setSending(true);
+    const res = await bridge.game.writeNote(t);
+    setSending(false);
+    if (res.ok) {
+      store.setState({ myNote: t });
+      return close();
+    }
+    if (res.code === 'CARE') return setCare(true);
+    setError(NOTE_ERRORS[res.code as keyof typeof NOTE_ERRORS] ?? NOTE_ERRORS.NETWORK);
+  };
+
+  return (
+    <div className="pointer-events-auto fixed inset-0 grid place-items-center bg-black/30 p-4" onClick={close}>
+      <form
+        role="dialog"
+        aria-label="在車窗霧氣上寫一句話"
+        className={`w-full max-w-sm rounded p-4 ${theme.panel}`}
+        onClick={e => e.stopPropagation()}
+        onSubmit={e => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        {care && (
+          <div role="alert" className={`mb-3 rounded p-3 leading-relaxed ${theme.night ? 'bg-white/10' : 'bg-white/70'}`}>
+            看起來你現在很辛苦。這句話不會出現在車窗上，只有你看得到。
+            <br />
+            想找人說說話的話，可以撥打 <b>1925 安心專線</b>（24 小時、免付費），會有人好好聽你說。
+          </div>
+        )}
+        <p className="mb-2 opacity-80">{mode === 'morning' ? '本日宣言' : '此刻心情'}・寫在身旁的車窗上，會慢慢被霧氣蓋住</p>
+        <input
+          autoFocus
+          value={text}
+          placeholder={mode === 'morning' ? '今天我要……' : '現在的心情是……'}
+          onCompositionStart={() => (composing.current = true)}
+          onCompositionEnd={e => {
+            composing.current = false;
+            setText(clamp(e.currentTarget.value));
+          }}
+          onChange={e => {
+            setError('');
+            // 輸入法組字中不截斷，避免吃掉注音
+            setText(composing.current ? e.target.value : clamp(e.target.value));
+          }}
+          className={`w-full rounded px-3 py-2 text-base outline-none ring-1 ${theme.night ? 'bg-black/20 ring-white/20' : 'bg-white/70 ring-ink/20'}`}
+        />
+        <div className="mt-2 flex items-center justify-between text-xs">
+          <span className={error ? 'text-rose' : 'opacity-60'}>{error || '不能按讚、不能回覆，只是寫下來。'}</span>
+          <span className="tabular-nums opacity-60">{count}/{NOTE_MAX_GRAPHEMES}</span>
+        </div>
+        <div className="mt-3 flex justify-end gap-2">
+          <button type="button" className={`rounded px-3 py-1.5 ${theme.chip}`} onClick={close}>算了</button>
+          <button type="submit" disabled={!text.trim() || sending} className={`rounded px-3 py-1.5 disabled:opacity-40 ${theme.chipOn}`}>寫上去</button>
+        </div>
+      </form>
+    </div>
+  );
+}

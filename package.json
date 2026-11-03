@@ -1,0 +1,20 @@
+{
+  "name": "carriage-corner",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c magenta,cyan \"npm run dev -w @cc/server\" \"npm run dev -w @cc/web\"",
+    "dev:web": "npm run dev -w @cc/web",
+    "dev:server": "npm run dev -w @cc/server",
+    "build": "npm run build -w @cc/web",
+    "test": "npm test -w @cc/server",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "typescript": "^7.0.2"
+  }
+}

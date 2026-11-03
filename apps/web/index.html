@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#3A3846" />
+    <title>車廂角落 Carriage Corner</title>
+    <meta name="description" content="同在，但不必言語。一節永遠在行駛的北城捷運車廂。" />
+    <!-- 閘門畫面的樣式直接內嵌：不等 JS 就能繪製（docs/PRD.md §6.5） -->
+    <style>
+      :root {
+        --oat: #e8e1d5; --ink: #4a4744; --milk: #e6c9a8; --mist: #8fa3b5;
+        --night: #3a3846; --lamp: #d9b98c; --rose: #b97a6f; --khaki: #a89170; --core: #7c93a8;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--night); color: var(--ink);
+        font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+      #stage { position: fixed; inset: 0; }
+      #hud { position: fixed; inset: 0; pointer-events: none; }
+      .gate { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
+        background: radial-gradient(120% 90% at 50% 0%, #4a4756 0%, var(--night) 70%); z-index: 10;
+        transition: opacity .6s ease, visibility .6s; }
+      .gate--leaving { opacity: 0; visibility: hidden; }
+      .gate__card { width: min(440px, 100%); background: var(--oat); border-radius: 6px; padding: 24px 22px 20px;
+        box-shadow: 0 0 0 4px #d6cdbe, 0 18px 40px rgba(0,0,0,.35); image-rendering: pixelated; }
+      .brand { display: flex; align-items: center; gap: 8px; font-size: 13px; letter-spacing: .08em; color: #6b6660; }
+      .brand svg { width: 24px; height: 24px; image-rendering: pixelated; }
+      h1 { margin: 14px 0 2px; font-size: 30px; letter-spacing: .4em; text-align: center; }
+      .sub { text-align: center; margin: 0 0 18px; font-size: 13px; letter-spacing: .2em; color: #7d776f; }
+      .q { font-size: 13px; margin: 14px 0 8px; color: #6b6660; }
+      .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+      .opt { appearance: none; border: 2px solid #cfc6b8; background: #f1ece3; color: var(--ink); border-radius: 4px;
+        padding: 8px 10px; font: inherit; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+      .opt[aria-pressed="true"] { border-color: var(--ink); background: #fffaf1; }
+      .opt:focus-visible, .board:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
+      .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+      .board { margin-top: 20px; width: 100%; border: 0; border-radius: 6px; padding: 14px; font: inherit; font-size: 17px;
+        letter-spacing: .1em; background: var(--milk); color: var(--ink); cursor: pointer; box-shadow: 0 4px 0 #c9a77f; }
+      .board:active { transform: translateY(2px); box-shadow: 0 2px 0 #c9a77f; }
+      .board[disabled] { opacity: .6; cursor: progress; }
+      .fine { text-align: center; font-size: 12px; color: #8b857d; margin: 12px 0 0; letter-spacing: .1em; }
+      .legal { text-align: center; font-size: 10px; color: #9a948b; margin: 8px 0 0; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="hud"></div>
+
+    <main class="gate" id="gate">
+      <section class="gate__card" aria-labelledby="gate-title">
+        <div class="brand">
+          <!-- 北城捷運 TPRT 原創幾何 T 字像素標誌（docs/PRD.md §3.3） -->
+          <svg viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges">
+            <rect width="16" height="16" fill="#e8e1d5" />
+            <rect x="1" y="1" width="14" height="2" fill="#4a4744" />
+            <rect x="6" y="3" width="4" height="10" fill="#4a4744" />
+            <rect x="4" y="4" width="1" height="1" fill="#4a4744" /><rect x="11" y="4" width="1" height="1" fill="#4a4744" />
+            <rect x="4" y="6" width="1" height="1" fill="#4a4744" /><rect x="11" y="6" width="1" height="1" fill="#4a4744" />
+            <rect x="4" y="8" width="1" height="1" fill="#4a4744" /><rect x="11" y="8" width="1" height="1" fill="#4a4744" />
+            <rect x="4" y="10" width="1" height="1" fill="#4a4744" /><rect x="11" y="10" width="1" height="1" fill="#4a4744" />
+          </svg>
+          北城捷運 TPRT
+        </div>
+        <h1 id="gate-title">車廂角落</h1>
+        <p class="sub">CARRIAGE CORNER</p>
+
+        <p class="q" id="q-line">今天想搭哪條線？</p>
+        <div class="opts" role="group" aria-labelledby="q-line" data-group="line">
+          <button class="opt" data-value="CX" aria-pressed="true"><span class="dot" style="background:var(--core)"></span>CX 城心線</button>
+          <button class="opt" data-value="RV" aria-pressed="false"><span class="dot" style="background:var(--rose)"></span>RV 河岸線</button>
+          <button class="opt" data-value="SK" aria-pressed="false"><span class="dot" style="background:var(--khaki)"></span>SK 雲橋線</button>
+        </div>
+
+        <p class="q" id="q-avatar">你是哪一位乘客？</p>
+        <div class="opts" role="group" aria-labelledby="q-avatar" data-group="avatar">
+          <button class="opt" data-value="office" aria-pressed="true">👔 上班族</button>
+          <button class="opt" data-value="student" aria-pressed="false">🎒 學生</button>
+          <button class="opt" data-value="hoodie" aria-pressed="false">🧥 連帽外套</button>
+          <button class="opt" data-value="headphone" aria-pressed="false">🎧 耳機族</button>
+        </div>
+
+        <p class="q" id="q-card">選一張隨行卡 PassCard</p>
+        <div class="opts" role="group" aria-labelledby="q-card" data-group="passCard">
+          <button class="opt" data-value="tile" aria-pressed="true">▦ 四色花磚</button>
+          <button class="opt" data-value="boba" aria-pressed="false">🧋 像素珍奶</button>
+          <button class="opt" data-value="ricecooker" aria-pressed="false">🍚 像素電鍋</button>
+          <button class="opt" data-value="mangoice" aria-pressed="false">🥭 芒果冰</button>
+        </div>
+
+        <button class="board" id="board" type="button">嗶！感應隨行卡進站</button>
+        <p class="fine">不需註冊・完全匿名・沒有聊天室</p>
+        <p class="legal">本作為獨立原創作品，路線、站名、標誌與票證皆為虛構，與任何真實營運單位無關。</p>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

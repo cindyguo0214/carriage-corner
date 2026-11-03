@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --color-oat: #e8e1d5;
+  --color-oat-deep: #d6cdbe;
+  --color-ink: #4a4744;
+  --color-milk: #e6c9a8;
+  --color-mist: #8fa3b5;
+  --color-smoke: #3a3846;
+  --color-smoke-soft: #4a4756;
+  --color-lamp: #d9b98c;
+  --color-rose: #b97a6f;
+  --color-sage: #7fa9a3;
+}
+
+#stage canvas {
+  image-rendering: pixelated;
+  display: block;
+  touch-action: none;
+}
