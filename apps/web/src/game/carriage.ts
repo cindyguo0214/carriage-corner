@@ -292,7 +292,10 @@ export class CarriageScene implements Scene {
       const toMe = to === this.selfPid;
       if (target) this.playInteraction(target, kind, toMe);
       if (toMe) {
-        store.setState(s => ({ cheersReceived: s.cheersReceived + 1 }));
+        store.setState(s => ({
+          received: { ...s.received, [kind]: s.received[kind] + 1 },
+          ...(kind === 'fortune' && fortune !== null ? { lastFortune: fortune } : {}),
+        }));
         actions.toast(receivedToast(kind, target?.state === 'music', fortune));
       }
     });

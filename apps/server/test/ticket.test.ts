@@ -23,7 +23,7 @@ after(() => server.close());
 
 const ticket = (patch: Partial<TicketStats> = {}): TicketStats => ({
   line: 'RV', from: 'RV01', to: 'RV04', seat: '3B', boardedAt: Date.now() - 47 * 60_000, minutes: 47,
-  pomodoros: 2, cheers: 1, coRiders: 7, quote: 1, mode: 'night', card: 'boba', room: 'RV-0042',
+  pomodoros: 2, received: { beep: 1, wave: 0, blanket: 2, fortune: 1 }, fortune: 3, coRiders: 7, quote: 1, mode: 'night', card: 'boba', room: 'RV-0042',
   ...patch,
 });
 
@@ -87,7 +87,7 @@ describe('ticket share links', () => {
   it('竄改過的 token：落地頁導回首頁、預覽圖 404', async () => {
     const { token } = (await (await sign(ticket())).json()) as { token: string };
     const [payload, sig] = token.split('.');
-    const forged = Buffer.from(JSON.stringify({ ...ticket(), cheers: 999 })).toString('base64url');
+    const forged = Buffer.from(JSON.stringify({ ...ticket(), pomodoros: 99 })).toString('base64url');
     for (const bad of [`${forged}.${sig}`, `${payload}.AAAA`, 'garbage']) {
       const page = await fetch(`${base}/t/${bad}`, { redirect: 'manual' });
       assert.equal(page.status, 302);

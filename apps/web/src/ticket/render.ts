@@ -2,7 +2,7 @@
 // 像素圖層畫在 216×270，再以 Nearest 放大 5 倍；文字直接畫在全解析度上保持清晰。
 import qrcode from 'qrcode-generator';
 import {
-  companionLine, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
+  companionLine, fortuneAt, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
   type Mode, type PassCardId, type TicketStats,
 } from '@cc/shared';
 import { makeCanvas, mix, Painter } from '../game/paint';
@@ -91,16 +91,31 @@ export function drawTicket({ stats, shareUrl, note }: TicketView): HTMLCanvasEle
   text(`乘車　${on.hh}:${on.mm} → ${off.hh}:${off.mm}（${stats.minutes} 分）`, L, 740, 36, pal.ink);
 
   // 撕線以下：這段旅程
-  text(`📖 專注 ×${stats.pomodoros}　🙂 收到微光 ×${stats.cheers}`, L, 930, 42, pal.ink);
-  text(companionLine(stats.coRiders), L, 1005, 32, pal.muted);
+  const r = stats.received;
+  text(`📖 專注模式 ×${stats.pomodoros}`, L, 885, 36, pal.ink, { bold: true });
+  text(`🪪 嗶卡 ×${r.beep}　🎵 波紋 ×${r.wave}　💤 小毯 ×${r.blanket}　📜 籤 ×${r.fortune}`, L, 938, 30, pal.ink);
+  let y = 990;
+  if (stats.fortune !== null) {
+    const f = fortuneAt(stats.fortune);
+    text(`收到的籤：「${f.text}」${f.grade}`, L, y, 30, pal.accent, { bold: true });
+    y += 42;
+  }
+  text(companionLine(stats.coRiders), L, y, 28, pal.muted);
 
-  let y = 1085;
+  y += 54;
   for (const l of wrap(ctx, `「${quoteOf(stats)}」`, 620, `700 36px ${FONT}`)) {
     text(l, L - 18, y, 36, pal.accent, { bold: true });
     y += 52;
   }
   if (note) {
-    for (const l of wrap(ctx, `你在車窗上寫下：「${note}」`, 620, `28px ${FONT}`)) {
+    // 序號在 y=1240：放不下的行併成一行並以「…」結尾
+    const lines = wrap(ctx, `你在車窗上寫下：「${note}」`, 620, `28px ${FONT}`);
+    const room = Math.max(1, Math.floor((1236 - y) / 42));
+    if (lines.length > room) {
+      lines.length = room;
+      lines[room - 1] = `${lines[room - 1].slice(0, -1)}…`;
+    }
+    for (const l of lines) {
       text(l, L, y + 6, 28, pal.muted);
       y += 42;
     }

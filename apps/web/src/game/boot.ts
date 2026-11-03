@@ -31,7 +31,8 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
         coRiders: 0,
       },
       pomodorosDone: 0,
-      cheersReceived: 0,
+      received: { beep: 0, wave: 0, blanket: 0, fortune: 0 },
+      lastFortune: null,
     });
   };
 

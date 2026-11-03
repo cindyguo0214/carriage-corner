@@ -1,7 +1,7 @@
 // 全域狀態：Pixi 場景、音訊與 React HUD 各自訂閱需要的切片（docs/PRD.md §6.3）
 import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
-import type { AvatarId, Gender, LineId, Mode, PassCardId, PaxState, SpotId } from '@cc/shared';
+import type { AvatarId, Gender, GlowKind, LineId, Mode, PassCardId, PaxState, SpotId } from '@cc/shared';
 
 export interface Pomodoro {
   kind: 'focus' | 'break';
@@ -61,7 +61,10 @@ export interface AppState {
   subtitle: { text: string; at: number } | null;
   pomodoro: Pomodoro | null;
   pomodorosDone: number;
-  cheersReceived: number;
+  /** 這趟收到的四種互動次數（車票用） */
+  received: Record<GlowKind, number>;
+  /** 這趟最近收到的一支籤（FORTUNES 索引） */
+  lastFortune: number | null;
   /** 這趟旅程：車票明信片的素材，只存在本機。下車後 toIdx 記下下車站 */
   ride: { boardedAt: number; fromIdx: number; toIdx?: number; endedAt?: number; seat?: SpotId; roomId: string; coRiders: number } | null;
   /** 自己最近一次寫在車窗上的話（可選擇印在車票上，不進公開連結） */
@@ -101,7 +104,8 @@ export const store = createStore<AppState>(() => ({
   subtitle: null,
   pomodoro: null,
   pomodorosDone: 0,
-  cheersReceived: 0,
+  received: { beep: 0, wave: 0, blanket: 0, fortune: 0 },
+  lastFortune: null,
   ride: null,
   myNote: null,
   ui: { mixerOpen: false, composerOpen: false, ticketOpen: false, glowMenu: null, noteMenu: null },

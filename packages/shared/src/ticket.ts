@@ -1,7 +1,7 @@
 // 北城捷運車票明信片（docs/PRD.md §8.1–8.5）
 // 公開分享連結只帶這些欄位：全是代碼與數字，不含任何使用者輸入的文字，因此不需內容審核也不需資料庫。
 import { LINES } from './lines';
-import type { LineId, Mode, PassCardId, SpotId } from './protocol';
+import type { GlowKind, LineId, Mode, PassCardId, SpotId } from './protocol';
 import { QUOTES } from './quotes';
 
 export interface TicketStats {
@@ -15,7 +15,10 @@ export interface TicketStats {
   boardedAt: number;
   minutes: number;
   pomodoros: number;
-  cheers: number;
+  /** 收到的四種互動次數（嗶卡默契、同頻波紋、蓋上小毯、遞幸運籤） */
+  received: Record<GlowKind, number>;
+  /** 最近收到的一支籤（FORTUNES 索引）；沒收到為 null */
+  fortune: number | null;
   /** 同車過的真人乘客數（不含 NPC 與自己） */
   coRiders: number;
   /** QUOTES[mode] 的索引 */
