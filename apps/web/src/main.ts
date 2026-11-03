@@ -1,7 +1,11 @@
 import './styles.css';
-import { looksLikeContact, tidyName, type AvatarId, type Gender, type LineId, type PassCardId } from '@cc/shared';
+import {
+  LINES, looksLikeContact, stationIsUnderground, tidyName,
+  type AvatarId, type Gender, type LineId, type PassCardId,
+} from '@cc/shared';
 import { mixer } from './audio/AmbientMixer';
 import { devParams, modeForHour, store } from './store';
+import { loading } from './ui/loading';
 
 // 玩家在閘門選路線、選卡面的這幾秒，背景先把場景與 HUD 模組載好（docs/PRD.md §6.5）
 const gameModule = import('./game/boot');
@@ -10,27 +14,42 @@ const hudModule = import('./ui/mountHud');
 const REALTIME = import.meta.env.VITE_TARGET !== 'artifact';
 const netModule = REALTIME ? import('./net/session') : null;
 
-const gate = document.getElementById('gate')!;
-const boardButton = document.getElementById('board') as HTMLButtonElement;
-const nameInput = document.getElementById('name') as HTMLInputElement;
-const nameError = document.getElementById('name-error')!;
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const gate = $('gate');
+const step1 = $('step-1');
+const step2 = $('step-2');
+const stepBadge = $('step-badge');
+const nextButton = $<HTMLButtonElement>('next');
+const backButton = $<HTMLButtonElement>('back');
+const boardButton = $<HTMLButtonElement>('board');
+const nameInput = $<HTMLInputElement>('name');
+const nameError = $('name-error');
+const route = $<HTMLOListElement>('route');
+
+// 開網頁的載入畫面：等場景模組下載（最多 2.5 秒），至少顯示 0.9 秒
+loading.markShown();
+void Promise.race([Promise.all([gameModule, hudModule]), new Promise(r => setTimeout(r, 2500))])
+  .catch(() => {})
+  .then(() => loading.hide(900));
 
 // 記住上次的名字與性別（只存在這台裝置）
 const PROFILE_KEY = 'cc.profile';
+const press = (group: string, value: string) =>
+  gate.querySelectorAll(`[data-group="${group}"] button`).forEach(b =>
+    b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.value === value)),
+  );
 try {
   const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null') as { name?: string; gender?: Gender } | null;
   if (saved?.name) nameInput.value = saved.name;
   if (saved?.gender === 'm' || saved?.gender === 'f') {
     store.setState({ gender: saved.gender });
-    gate.querySelectorAll('[data-group="gender"] button').forEach(b =>
-      b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.value === saved.gender)),
-    );
+    press('gender', saved.gender);
   }
 } catch { /* 沒有就算了 */ }
 
 nameInput.addEventListener('input', () => (nameError.textContent = ''));
 nameInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.isComposing) boardButton.click();
+  if (e.key === 'Enter' && !e.isComposing) nextButton.click();
 });
 
 /** 名字留白就請對方填；看起來像聯絡方式的不收 */
@@ -56,42 +75,104 @@ for (const group of gate.querySelectorAll<HTMLElement>('[data-group]')) {
     group.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
     const value = button.dataset.value!;
     const key = group.dataset.group as 'line' | 'gender' | 'avatar' | 'passCard';
-    if (key === 'line') store.setState({ line: value as LineId });
+    if (key === 'line') selectLine(value as LineId);
     if (key === 'gender') store.setState({ gender: value as Gender });
     if (key === 'avatar') store.setState({ avatar: value as AvatarId });
     if (key === 'passCard') store.setState({ passCard: value as PassCardId });
   });
 }
 
-// 從車票落地頁「搭上同一條線」進來時預選路線
-const presetLine = new URLSearchParams(location.search).get('line');
-if (presetLine === 'CX' || presetLine === 'RV' || presetLine === 'SK') {
-  store.setState({ line: presetLine });
-  gate.querySelectorAll('[data-group="line"] button').forEach(b =>
-    b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.value === presetLine)),
-  );
+// ── 第 1 步 ⇄ 第 2 步 ──
+function showStep(n: 1 | 2) {
+  step1.hidden = n !== 1;
+  step2.hidden = n !== 2;
+  stepBadge.textContent = `${n} / 2`;
+  gate.scrollTop = 0;
+  (n === 1 ? nameInput : gate.querySelector<HTMLButtonElement>('[data-group="line"] [aria-pressed="true"]'))?.focus();
 }
 
-boardButton.addEventListener('click', async () => {
+nextButton.addEventListener('click', () => {
   const name = readName();
   if (!name) return;
-  // 必須在點擊事件內同步呼叫，瀏覽器才允許出聲
-  void mixer.unlock();
-  boardButton.disabled = true;
-  boardButton.textContent = '嗶！走進月台……';
   store.setState({ name });
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify({ name, gender: store.getState().gender }));
   } catch { /* 無痕模式 */ }
+  showStep(2);
+});
+backButton.addEventListener('click', () => showStep(1));
+
+// ── 路線圖：選路線後列出車站，點一站作為進站車站 ──
+function selectLine(line: LineId) {
+  if (store.getState().line !== line) store.setState({ line, station: null });
+  press('line', line);
+  renderRoute();
+}
+
+function renderRoute() {
+  const { line: lineId, station } = store.getState();
+  const line = LINES[lineId];
+  route.style.setProperty('--route', line.color);
+  route.replaceChildren(
+    ...line.stations.map((s, i) => {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'stop';
+      b.setAttribute('aria-pressed', String(i === station));
+      const ground = stationIsUnderground(line, i) ? '地下站' : '高架站';
+      const xfer = (s.transfer ?? [])
+        .map(t => `<span class="stop__xfer" style="background:${LINES[t].color}">轉 ${LINES[t].zh}</span>`)
+        .join('');
+      b.innerHTML =
+        `<span class="stop__dot" aria-hidden="true"></span>` +
+        `<span class="stop__name"><span class="stop__zh"></span><span class="stop__en"></span></span>` +
+        `<span class="stop__meta">${xfer}<span>${s.code}・${ground}</span></span>`;
+      b.querySelector('.stop__zh')!.textContent = s.zh;
+      b.querySelector('.stop__en')!.textContent = s.en;
+      b.addEventListener('click', () => {
+        store.setState({ station: i });
+        renderRoute();
+        route.querySelectorAll<HTMLButtonElement>('.stop')[i]?.focus();
+      });
+      li.appendChild(b);
+      return li;
+    }),
+  );
+  boardButton.disabled = station === null;
+  boardButton.textContent = station === null ? '先點一個車站' : `嗶！從${line.stations[station].zh}進站`;
+}
+
+// 從車票落地頁「搭上同一條線」進來時預選路線；開發時可用 ?station= 預選車站
+const params = new URLSearchParams(location.search);
+const presetLine = params.get('line');
+if (presetLine === 'CX' || presetLine === 'RV' || presetLine === 'SK') store.setState({ line: presetLine });
+const presetStation = Number(params.get('station'));
+if (presetStation >= 1 && presetStation <= LINES[store.getState().line].stations.length) store.setState({ station: presetStation - 1 });
+selectLine(store.getState().line);
+
+boardButton.addEventListener('click', async () => {
+  const { line, station } = store.getState();
+  if (station === null) return;
+  // 必須在點擊事件內同步呼叫，瀏覽器才允許出聲
+  void mixer.unlock();
+  boardButton.disabled = true;
+  const stationName = LINES[line].stations[station].zh;
   try {
     // 連線與模組下載同時進行；連不上伺服器時 net 為 null，改用離線模式
-    const [{ boot }, { mountHud }, net] = await Promise.all([
-      gameModule,
-      hudModule,
-      netModule ? netModule.then(m => m.connect()) : null,
-    ]);
-    await boot(document.getElementById('stage')!, net);
-    mountHud(document.getElementById('hud')!);
+    await loading.during(
+      `正在走進${stationName}月台`,
+      (async () => {
+        const [{ boot }, { mountHud }, net] = await Promise.all([
+          gameModule,
+          hudModule,
+          netModule ? netModule.then(m => m.connect()) : null,
+        ]);
+        await boot(document.getElementById('stage')!, net);
+        mountHud(document.getElementById('hud')!);
+      })(),
+      { lineColor: LINES[line].color, minMs: 1200 },
+    );
     store.setState({ boarded: true });
     gate.classList.add('gate--leaving');
   } catch (err) {
@@ -108,7 +189,7 @@ mixer.subscribe(s => {
 });
 
 // 依真實時間切換晨／夜（網址帶 ?mode= 時固定不切）
-if (!new URLSearchParams(location.search).has('mode')) {
+if (!params.has('mode')) {
   setInterval(() => {
     const mode = modeForHour(new Date().getHours());
     if (mode !== store.getState().mode) store.setState({ mode });

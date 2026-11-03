@@ -2,7 +2,7 @@
 // 連線時由伺服器驅動乘客、列車與留言；離線時本機模擬。到站開門可點車門下車，點兩端貫通道換車廂，點空位換座位。
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import {
-  CARS, SEATS, STANDS, type BoardedSnapshot, type GlowKind, type Mode, type ServerToClient, type SpotId, type WindowNote,
+  CARS, FORTUNES, fortuneAt, SEATS, STANDS, type BoardedSnapshot, type GlowKind, type Mode, type ServerToClient, type SpotId, type WindowNote,
 } from '@cc/shared';
 import { mixer } from '../audio/AmbientMixer';
 import { actions, devParams, store } from '../store';
@@ -45,6 +45,8 @@ type Start =
 export class CarriageScene implements Scene {
   readonly kind = 'carriage';
   readonly world = new Container();
+  /** 車窗上的字：螢幕解析度 */
+  readonly overlay = new Container();
   readonly train: Train;
   private net: NetLink | null;
   private scenery = new Scenery();
@@ -56,6 +58,15 @@ export class CarriageScene implements Scene {
   private led = new Graphics();
   /** 站著的人握著的吊環 */
   private handStraps = new Graphics();
+  private gangwayFx = new Graphics();
+  /** 互動效果：同頻波紋、蓋在 A 排／B 排乘客身上的小毯 */
+  private waveFx = new Graphics();
+  private blanketBack = new Graphics();
+  private blanketFront = new Graphics();
+  private waves = new Map<string, number>();
+  private blankets = new Map<string, { since: number; until: number }>();
+  private pops: { id: string; pid: string; text: string; born: number }[] = [];
+  private popSeq = 0;
   private straps: Sprite[];
   private strapArt: Texture[] = [];
   private particles = new Particles();
@@ -92,7 +103,10 @@ export class CarriageScene implements Scene {
 
     // ── 場景圖層（由後到前）──
     const glassLayer = new Container();
-    this.glasses.forEach(g => glassLayer.addChild(g.sprite));
+    this.glasses.forEach(g => {
+      glassLayer.addChild(g.sprite);
+      this.overlay.addChild(g.textView);
+    });
     const leafLayer = new Container();
     for (const d of DOORS) {
       const hole = doorHole(d);
@@ -120,8 +134,9 @@ export class CarriageScene implements Scene {
     );
     this.interiorFront.y = B_PANEL_Y;
     this.world.addChild(
-      this.scenery.view, this.doorway, leafLayer, glassLayer, this.interiorBack, this.led, strapLayer,
-      this.passengers.backRow, this.handStraps, this.passengers.standRow, this.passengers.frontRow, this.interiorFront, this.lighting.view, this.particles.view,
+      this.scenery.view, this.doorway, leafLayer, glassLayer, this.interiorBack, this.led, this.gangwayFx, strapLayer,
+      this.passengers.backRow, this.blanketBack, this.handStraps, this.passengers.standRow,
+      this.passengers.frontRow, this.blanketFront, this.waveFx, this.interiorFront, this.lighting.view, this.particles.view,
     );
 
     // ── 列車 ──
@@ -272,12 +287,16 @@ export class CarriageScene implements Scene {
     on('pax:state', ({ pid, state }) => {
       if (pid !== this.selfPid) this.passengers.setState(pid, state);
     });
-    on('glow', ({ to, kind }) => {
+    on('glow', ({ to, kind, fortune }) => {
       const target = this.passengers.get(to);
-      if (target) this.showGlow(target);
-      if (to === this.selfPid) {
-        store.setState(s => ({ cheersReceived: s.cheersReceived + 1 }));
-        actions.toast(GLOW_TOAST[kind]);
+      const toMe = to === this.selfPid;
+      if (target) this.playInteraction(target, kind, toMe);
+      if (toMe) {
+        store.setState(s => ({
+          received: { ...s.received, [kind]: s.received[kind] + 1 },
+          ...(kind === 'fortune' && fortune !== null ? { lastFortune: fortune } : {}),
+        }));
+        actions.toast(receivedToast(kind, target?.state === 'music', fortune));
       }
     });
     on('note:new', n => this.applyNote(n));
@@ -297,7 +316,7 @@ export class CarriageScene implements Scene {
     this.unsubscribe.push(net.onResync(snap => this.applySnapshot(snap, true)));
   }
 
-  // ── 微光 ──
+  // ── 對其他乘客的互動（docs/PRD.md 第 17 章）──
 
   private showGlow(target: Pax) {
     const cx = target.actor.sprite.x + 32;
@@ -307,15 +326,101 @@ export class CarriageScene implements Scene {
     for (let i = 0; i < 6; i++) this.particles.emit('spark', cx - 8 + Math.random() * 16, cy - 4, tint);
   }
 
+  /** 頭上浮起一小段字（嗶！、♪、📜），1.6 秒後消失 */
+  private pop(target: Pax, text: string) {
+    this.pops.push({ id: `pop${++this.popSeq}`, pid: target.pid, text, born: performance.now() });
+  }
+
+  /** 全車看得到的互動效果；involved＝自己是送出者或收到的人（才聽得到嗶聲） */
+  private playInteraction(target: Pax, kind: GlowKind, involved: boolean) {
+    const now = Date.now();
+    switch (kind) {
+      case 'beep':
+        this.showGlow(target);
+        this.pop(target, '嗶！');
+        if (involved) mixer.playCardBeep();
+        break;
+      case 'wave':
+        if (target.state === 'music') {
+          this.waves.set(target.pid, now + 3000);
+          this.pop(target, '♪');
+        } else {
+          this.showGlow(target);
+        }
+        break;
+      case 'blanket':
+        if (target.state === 'sleep') this.blankets.set(target.pid, { since: now, until: now + 5 * 60_000 });
+        break;
+      case 'fortune':
+        this.showGlow(target);
+        this.pop(target, '📜');
+        break;
+    }
+  }
+
   async glow(seat: SpotId, kind: GlowKind) {
     const target = this.passengers.at(seat);
     if (!target) return;
+    let fortune: number | null = kind === 'fortune' ? Math.floor(Math.random() * FORTUNES.length) : null;
     if (this.net) {
-      // 送出者的動畫在 ack 成功後於本機播放；伺服器不會把這則微光回送給送出者
+      // 送出者的動畫在 ack 成功後於本機播放；伺服器不會把這則互動回送給送出者
       const res = await this.net.socket.timeout(4000).emitWithAck('glow:send', { to: target.pid, kind }).catch(() => null);
-      if (!res?.ok) return;
+      if (!res) return;
+      if (!res.ok) {
+        if (res.code === 'RATE_LIMITED') actions.toast('剛剛才互動過，讓對方靜一靜吧。');
+        if (res.code === 'NO_TARGET' && kind === 'blanket') actions.toast('對方醒著，小毯子先收著。');
+        return;
+      }
+      fortune = res.data.fortune;
     }
-    this.showGlow(target);
+    this.playInteraction(target, kind, true);
+    if (kind === 'fortune' && fortune !== null) {
+      const f = fortuneAt(fortune);
+      actions.toast(`你遞出一張籤：「${f.text}」（${f.grade}）`);
+    }
+  }
+
+  /** 波紋與小毯：每幀畫在對應的乘客身上 */
+  private drawEffects() {
+    const pal = PALETTES[this.mode];
+    const now = Date.now();
+    const fx = this.waveFx;
+    fx.clear();
+    for (const [pid, until] of this.waves) {
+      const p = this.passengers.get(pid);
+      if (!p || now > until) {
+        this.waves.delete(pid);
+        continue;
+      }
+      // 頭頂上 5 根跟著節拍跳的音樂波形
+      const { x, y } = p.actor.headTop;
+      const t = now / 1000;
+      for (let i = 0; i < 5; i++) {
+        const h = 2 + Math.round(4 * Math.abs(Math.sin(t * 7 + i * 1.3)));
+        fx.rect(Math.round(x - 11 + i * 5), Math.round(y - 4 - h), 3, h).fill(hexToNum(i % 2 ? pal.glow : pal.ledOn));
+      }
+    }
+    this.blanketBack.clear();
+    this.blanketFront.clear();
+    for (const [pid, b] of this.blankets) {
+      const p = this.passengers.get(pid);
+      if (!p || p.state !== 'sleep' || now > b.until) {
+        this.blankets.delete(pid);
+        continue;
+      }
+      // 半透明像素小毯：從胸口蓋到腿上，淡入 0.6 秒
+      const alpha = Math.min(1, (now - b.since) / 600) * 0.78;
+      const g = p.seat[1] === 'B' ? this.blanketFront : this.blanketBack;
+      const { x, y } = p.actor.sprite;
+      const top = y + 31;
+      const base = hexToNum(this.mode === 'night' ? '#B48A9A' : '#D9B3A6');
+      const stripe = hexToNum(this.mode === 'night' ? '#C9A3B1' : '#EBCFC4');
+      g.rect(x + 18, top, 28, 21).fill({ color: base, alpha });
+      g.rect(x + 18, top, 28, 2).fill({ color: stripe, alpha });
+      for (let sx = x + 21; sx < x + 46; sx += 6) g.rect(sx, top + 4, 2, 17).fill({ color: stripe, alpha: alpha * 0.7 });
+      g.rect(x + 17, top + 1, 1, 19).fill({ color: base, alpha });
+      g.rect(x + 46, top + 1, 1, 19).fill({ color: base, alpha });
+    }
   }
 
   // ── 霧氣留言 ──
@@ -359,7 +464,7 @@ export class CarriageScene implements Scene {
         && x >= p.actor.sprite.x + 14 && x < p.actor.sprite.x + 50 && y >= p.actor.sprite.y + 4 && y < p.actor.sprite.y + 62,
     );
     if (hit) {
-      actions.setUi({ glowMenu: { seat: hit.seat, name: hit.actor.look.name, x: client.x, y: client.y }, noteMenu: null });
+      actions.setUi({ glowMenu: { seat: hit.seat, name: hit.actor.look.name, state: hit.state, x: client.x, y: client.y }, noteMenu: null });
       return;
     }
     actions.setUi({ glowMenu: null, noteMenu: null });
@@ -419,8 +524,51 @@ export class CarriageScene implements Scene {
     return seatX(this.selfSeat) + SEAT_W / 2;
   }
 
+  setPixelScale(scale: number) {
+    this.glasses.forEach(g => g.setResolution(scale));
+  }
+
   labels(out: Label[]) {
     this.passengers.labels(out);
+    const now = performance.now();
+    this.pops = this.pops.filter(pop => now - pop.born < 1600);
+    for (const pop of this.pops) {
+      const p = this.passengers.get(pop.pid);
+      if (!p) continue;
+      const k = (now - pop.born) / 1600;
+      const { x, y } = p.actor.headTop;
+      out.push({ id: pop.id, name: pop.text, x, y: y - 10 - Math.round(k * 10), alpha: k < 0.7 ? 1 : (1 - k) / 0.3, self: false, pop: true });
+    }
+    // 通道門指示牌：沒有下一節的那一側不顯示
+    const y = 104;
+    if (this.car > 1) {
+      out.push({ id: 'gw-left', name: `❮ 第 ${this.car - 1} 車廂`, x: GANGWAY_W + 3, y, alpha: 1, self: false, sign: { align: 'left', action: () => this.hooks.moveCar(-1) } });
+    }
+    if (this.car < CARS) {
+      out.push({ id: 'gw-right', name: `第 ${this.car + 1} 車廂 ❯`, x: W - GANGWAY_W - 3, y, alpha: 1, self: false, sign: { align: 'right', action: () => this.hooks.moveCar(1) } });
+    }
+  }
+
+  /** 通道門上會動的像素箭頭：一閃一閃往門外推 */
+  private drawGangwayArrows() {
+    const pal = PALETTES[this.mode];
+    const g = this.gangwayFx;
+    g.clear();
+    const phase = Math.floor(this.time * 3) % 3;
+    for (const dir of [-1, 1] as const) {
+      if (this.car + dir < 1 || this.car + dir > CARS) continue;
+      const cx = dir === -1 ? GANGWAY_W / 2 : W - GANGWAY_W / 2;
+      for (let k = 0; k < 3; k++) {
+        const y = 70 + k * 30;
+        const x = cx + dir * (phase - 1);
+        const color = hexToNum(k === phase ? pal.ledOn : pal.light);
+        for (let i = 0; i < 4; i++) {
+          // 「❮」或「❯」：中間最尖
+          g.rect(Math.round(x - dir * i - (dir === 1 ? 1 : 0)), y - i, 2, 1).fill(color);
+          g.rect(Math.round(x - dir * i - (dir === 1 ? 1 : 0)), y + i, 2, 1).fill(color);
+        }
+      }
+    }
   }
 
   colors(mode: Mode) {
@@ -477,6 +625,7 @@ export class CarriageScene implements Scene {
     this.scenery.update(dt, train, rain, rm);
     this.passengers.update(dt);
     this.drawHandStraps();
+    this.drawEffects();
     this.particles.update(dt);
     this.lighting.update(dt, train, this.scenery, rm);
 
@@ -510,6 +659,7 @@ export class CarriageScene implements Scene {
     if (this.ledAcc >= 0.25) {
       this.ledAcc = 0;
       drawLed(this.led, train, this.mode, Math.floor(this.time * 2) % 2 === 0);
+      this.drawGangwayArrows();
     }
   }
 
@@ -535,6 +685,7 @@ export class CarriageScene implements Scene {
     const art = this.art;
     requestAnimationFrame(() => {
       this.world.destroy({ children: true });
+      this.overlay.destroy({ children: true });
       art.forEach(t => t.destroy(true));
     });
   }
@@ -552,11 +703,18 @@ export class CarriageScene implements Scene {
 
 const ease = (t: number) => t * t * (3 - 2 * t);
 
-const GLOW_TOAST: Record<GlowKind, string> = {
-  nod: '有人對你點了點頭。',
-  light: '有人遞給你一點微光。',
-  pat: '有人輕輕拍了拍你的肩膀。',
-};
+/** 收到互動的人看到的提示（只有自己看得到） */
+function receivedToast(kind: GlowKind, listening: boolean, fortune: number | null) {
+  switch (kind) {
+    case 'beep': return '有人刷了一下隨行卡：嗶！跟你打聲招呼。';
+    case 'wave': return listening ? '有人跟你同頻，一起聽著這首歌。' : '有人遞給你一點溫暖的微光。';
+    case 'blanket': return '有人幫你蓋上一條小毯子。好好睡。';
+    case 'fortune': {
+      const f = fortuneAt(fortune ?? 0);
+      return `有人遞給你一張籤：「${f.text}」（${f.grade}）`;
+    }
+  }
+}
 
 /** 車門上方 LED 路線圖：原創像素線條＋虛擬站點；下一站閃爍 */
 function drawLed(g: Graphics, train: Train, mode: Mode, blinkOn: boolean) {

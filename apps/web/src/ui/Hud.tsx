@@ -9,16 +9,24 @@ import { actions, devParams, store, useApp, type PlatformPhase } from '../store'
 import { TicketModal } from './TicketModal';
 
 const STATES: { state: PaxState; icon: string; label: string }[] = [
-  { state: 'idle', icon: '🪟', label: '看窗外' },
-  { state: 'music', icon: '🎧', label: '戴耳機' },
-  { state: 'read', icon: '📖', label: '閱讀・番茄鐘' },
+  { state: 'idle', icon: '👀', label: '看窗外' },
+  { state: 'music', icon: '🎧', label: '聽音樂' },
+  { state: 'read', icon: '📖', label: '專注模式' },
   { state: 'sleep', icon: '😴', label: '補眠' },
 ];
 
-const GLOWS: { kind: GlowKind; label: string }[] = [
-  { kind: 'nod', label: '🙂 點頭致意' },
-  { kind: 'light', label: '✨ 遞上微光' },
-  { kind: 'pat', label: '🤝 拍拍肩膀' },
+/** 對其他乘客的互動（docs/PRD.md 第 17 章）：依對方此刻的狀態調整說明，蓋小毯只能給正在補眠的人 */
+const GLOWS: {
+  kind: GlowKind;
+  icon: string;
+  title: string;
+  hint: (state: PaxState) => string;
+  enabled?: (state: PaxState) => boolean;
+}[] = [
+  { kind: 'beep', icon: '🪪', title: '嗶卡默契', hint: () => '刷一下隨行卡打招呼' },
+  { kind: 'wave', icon: '🎵', title: '同頻波紋', hint: st => (st === 'music' ? '一起跟著音樂跳動 3 秒' : '送上一點溫暖微光') },
+  { kind: 'blanket', icon: '💤', title: '蓋上小毯', hint: st => (st === 'sleep' ? '幫補眠的人蓋上小毯子' : '對方補眠時才能蓋'), enabled: st => st === 'sleep' },
+  { kind: 'fortune', icon: '📜', title: '遞幸運籤', hint: () => '送一張今日小吉籤' },
 ];
 
 const CHANNELS: { ch: Channel; icon: string; label: string }[] = [
@@ -242,13 +250,34 @@ function BottomBar() {
   );
 }
 
+/** 底部按鈕：圖示＋看得到的中文標籤，不只靠圖示猜意思 */
+function BarButton({
+  icon, label, onClick, on = false, primary = false, title, expanded,
+}: {
+  icon: string; label: string; onClick: () => void; on?: boolean; primary?: boolean; title?: string; expanded?: boolean;
+}) {
+  const theme = useTheme();
+  return (
+    <button
+      aria-pressed={expanded === undefined && !primary ? on : undefined}
+      aria-expanded={expanded}
+      title={title ?? label}
+      className={`flex min-w-12 flex-col items-center gap-0.5 rounded px-2 py-1 transition-colors ${on || primary ? theme.chipOn : theme.chip}`}
+      onClick={onClick}
+    >
+      <span className="text-base leading-none" aria-hidden>{icon}</span>
+      <span className="whitespace-nowrap text-[11px] leading-none">{label}</span>
+    </button>
+  );
+}
+
 function PlatformBar() {
   const theme = useTheme();
   const hasRide = useApp(s => !!s.ride);
   return (
     <nav aria-label="月台" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
-      <span className="px-2 opacity-80">點長椅坐下・車門開了點車門上車</span>
-      <span className="mx-1 h-6 w-px bg-current opacity-20" aria-hidden />
+      <span className="px-2 text-xs opacity-80">點長椅坐下・車門開了點車門上車</span>
+      <span className="mx-1 h-8 w-px bg-current opacity-20" aria-hidden />
       <ExtraButtons ticket={hasRide} />
     </nav>
   );
@@ -261,59 +290,45 @@ function CarriageBar() {
   const dwell = useApp(s => s.train.phase === 'dwell');
   return (
     <nav aria-label="乘客動作" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
-      {!standing && STATES.map(s => (
-        <button
-          key={s.state}
-          aria-pressed={selfState === s.state}
-          aria-label={s.label}
-          title={s.label}
-          className={`rounded px-2.5 py-1.5 text-base transition-colors ${selfState === s.state ? theme.chipOn : theme.chip}`}
-          onClick={() => {
-            actions.setSelfState(s.state);
-            if (s.state === 'music') {
-              void mixer.setChannel('lofi', true);
-              actions.setUi({ mixerOpen: true });
-            }
-          }}
-        >
-          {s.icon}
-        </button>
-      ))}
-      {standing && <span className="px-2 opacity-80">拉著吊環・點空位坐下</span>}
-      <Pomodoro />
-      <span className="mx-1 h-6 w-px bg-current opacity-20" aria-hidden />
-      <button className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => actions.setUi({ composerOpen: true, glowMenu: null })}>
-        ✍ 寫在車窗
-      </button>
-      {dwell && (
-        <button className={`rounded px-2.5 py-1.5 ${theme.chipOn}`} onClick={() => bridge.game?.alight()}>
-          🚪 下車
-        </button>
-      )}
+      <BarButton icon="✍" label="車窗寫字" title="在身旁的車窗霧氣上寫一句話" onClick={() => actions.setUi({ composerOpen: true, glowMenu: null })} />
+      <span className="mx-0.5 h-8 w-px bg-current opacity-20" aria-hidden />
+      <div role="group" aria-label="角色狀態" className="flex items-center gap-1">
+        <span className="text-[10px] leading-tight opacity-60 [writing-mode:vertical-rl]" aria-hidden>角色狀態</span>
+        {standing ? (
+          <span className="px-2 text-xs opacity-80">拉著吊環・點空位坐下</span>
+        ) : (
+          STATES.map(s => (
+            <BarButton
+              key={s.state}
+              icon={s.icon}
+              label={s.label}
+              on={selfState === s.state}
+              onClick={() => {
+                actions.setSelfState(s.state);
+                if (s.state === 'music') {
+                  void mixer.setChannel('lofi', true);
+                  actions.setUi({ mixerOpen: true });
+                }
+              }}
+            />
+          ))
+        )}
+        <Pomodoro />
+      </div>
+      <span className="mx-0.5 h-8 w-px bg-current opacity-20" aria-hidden />
+      {dwell && <BarButton icon="🚪" label="下車" primary title="車門開著，現在可以下車" onClick={() => bridge.game?.alight()} />}
       <ExtraButtons ticket />
     </nav>
   );
 }
 
 function ExtraButtons({ ticket }: { ticket: boolean }) {
-  const theme = useTheme();
   const mixerOpen = useApp(s => s.ui.mixerOpen);
   return (
     <>
-      <button
-        aria-expanded={mixerOpen}
-        className={`rounded px-2.5 py-1.5 ${mixerOpen ? theme.chipOn : theme.chip}`}
-        onClick={() => actions.setUi({ mixerOpen: !mixerOpen })}
-      >
-        🎚 音效
-      </button>
+      <BarButton icon="🎚" label="音效" expanded={mixerOpen} on={mixerOpen} onClick={() => actions.setUi({ mixerOpen: !mixerOpen })} />
       {ticket && (
-        <button
-          className={`rounded px-2.5 py-1.5 ${theme.chip}`}
-          onClick={() => actions.setUi({ ticketOpen: true, mixerOpen: false, glowMenu: null, noteMenu: null })}
-        >
-          🎫 車票
-        </button>
+        <BarButton icon="🎫" label="車票" onClick={() => actions.setUi({ ticketOpen: true, mixerOpen: false, glowMenu: null, noteMenu: null })} />
       )}
     </>
   );
@@ -444,25 +459,39 @@ function GlowMenu() {
   const menu = useApp(s => s.ui.glowMenu);
   if (!menu) return null;
   const send = (kind: GlowKind) => {
-    bridge.game?.glow(menu.seat, kind);
+    void bridge.game?.glow(menu.seat, kind);
     actions.setUi({ glowMenu: null });
   };
-  const x = Math.max(8, Math.min(menu.x - 140, window.innerWidth - 330));
-  const y = Math.max(menu.y - 90, 8);
+  const x = Math.max(8, Math.min(menu.x - 150, window.innerWidth - 316));
+  const y = Math.max(8, Math.min(menu.y - 150, window.innerHeight - 200));
   return (
     <div
       role="menu"
-      aria-label={`對 ${menu.name} 送出微光`}
-      className={`pointer-events-auto fixed flex flex-col gap-1 rounded p-1.5 ${theme.panel}`}
+      aria-label={`和 ${menu.name} 互動`}
+      className={`pointer-events-auto fixed w-[300px] rounded p-2 ${theme.panel}`}
       style={{ left: x, top: y }}
     >
-      <span className="px-1 text-xs opacity-70">給 {menu.name}（對方不會知道是誰）</span>
-      <div className="flex gap-1">
-        {GLOWS.map((g, i) => (
-          <button key={g.kind} role="menuitem" autoFocus={i === 0} className={`whitespace-nowrap rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => send(g.kind)}>
-            {g.label}
-          </button>
-        ))}
+      <p className="mb-1.5 px-1 text-xs opacity-70">給 {menu.name}（對方不會知道是誰）</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {GLOWS.map((g, i) => {
+          const enabled = g.enabled?.(menu.state) ?? true;
+          return (
+            <button
+              key={g.kind}
+              role="menuitem"
+              autoFocus={i === 0}
+              disabled={!enabled}
+              className={`flex items-start gap-2 rounded px-2 py-1.5 text-left disabled:cursor-not-allowed disabled:opacity-40 ${theme.chip}`}
+              onClick={() => send(g.kind)}
+            >
+              <span className="text-lg leading-none" aria-hidden>{g.icon}</span>
+              <span className="flex flex-col">
+                <span className="font-medium">{g.title}</span>
+                <span className="text-[11px] leading-snug opacity-70">{g.hint(menu.state)}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

@@ -24,8 +24,16 @@ export class Stage {
   private worldInScreen = new Sprite(this.worldRT);
   private display = new Sprite(this.worldRT);
   private fade = new Sprite();
+  /** 螢幕解析度的疊層（車窗上的字）：跟著同一個鏡頭，裁在遊戲畫面範圍內 */
+  private overlay = new Container();
+  private overlayMask = new Graphics();
+  private pixelScale = 1;
   private fadeT = 0;
   private fadeSec = 1.2;
+  /** 換車廂的滑動：舊畫面往反方向滑出、新車廂從前進方向滑入 */
+  private slideDir: -1 | 0 | 1 = 0;
+  private slideT = 0;
+  private baseX = 0;
   private labels!: NameLabels;
   private labelBuf: Label[] = [];
   private portrait = false;
@@ -53,7 +61,8 @@ export class Stage {
     this.worldInScreen.y = PORTRAIT_WORLD_Y;
     this.screen.addChild(this.screenBg, this.worldInScreen);
     this.fade.visible = false;
-    this.app.stage.addChild(this.display, this.fade);
+    this.overlay.mask = this.overlayMask;
+    this.app.stage.addChild(this.display, this.fade, this.overlay, this.overlayMask);
     this.app.renderer.on('resize', () => this.layout());
     this.bindInput();
 
@@ -81,16 +90,26 @@ export class Stage {
   show(scene: Scene, transition: boolean) {
     if (transition && this.scene) this.snapshotForFade(0.9);
     this.scene?.dispose();
+    this.overlay.removeChildren();
     this.scene = scene;
+    if (scene.overlay) this.overlay.addChild(scene.overlay);
     scene.setMode(this.mode, this.chars);
+    scene.setPixelScale?.(this.pixelScale);
     this.applyColors();
     this.lastFocus = NaN;
     this.layout();
   }
 
-  /** 同一場景內的大變動（例如換車廂）也淡化一下 */
+  /** 同一場景內的大變動也淡化一下 */
   crossfade(sec = 0.9) {
     this.snapshotForFade(sec);
+  }
+
+  /** 穿過貫通道：dir=1 往後一節（畫面往左滑），-1 往前一節 */
+  slide(dir: -1 | 1) {
+    this.snapshotForFade(1);
+    this.slideDir = dir;
+    this.slideT = 0;
   }
 
   set maxFPS(fps: number) {
@@ -145,9 +164,14 @@ export class Stage {
       Math.round((cssW * dpr - bw * scale) / 2) / dpr,
       Math.round((cssH * dpr - bh * scale) / 2) / dpr,
     );
+    this.baseX = this.display.x;
     this.fade.scale.copyFrom(this.display.scale);
     this.fade.position.copyFrom(this.display.position);
     this.lastFocus = NaN;
+    this.overlayMask.clear().rect(this.display.x, this.display.y, bw * this.cssScale, bh * this.cssScale).fill(0xffffff);
+    this.overlay.scale.set(this.cssScale);
+    this.pixelScale = scale;
+    this.scene?.setPixelScale?.(scale);
   }
 
   private snapshotForFade(sec: number) {
@@ -208,7 +232,21 @@ export class Stage {
       this.worldInScreen.x = -this.camX;
       this.app.renderer.render({ container: this.screen, target: this.screenRT, clear: true });
     }
-    if (this.fade.visible) {
+    if (this.slideDir !== 0) {
+      this.slideT = Math.min(1, this.slideT + dt / 0.6);
+      const k = this.slideT * this.slideT * (3 - 2 * this.slideT);
+      const width = (this.portrait ? this.screenW : W) * this.cssScale;
+      // 以實體像素對齊，滑動時也維持像素清晰
+      const snap = (v: number) => Math.round(v * this.app.renderer.resolution) / this.app.renderer.resolution;
+      this.fade.x = snap(this.baseX - this.slideDir * k * width);
+      this.display.x = snap(this.baseX + this.slideDir * (1 - k) * width);
+      if (this.slideT >= 1) {
+        this.slideDir = 0;
+        this.display.x = this.fade.x = this.baseX;
+        this.fade.visible = false;
+        this.fade.texture.destroy(true);
+      }
+    } else if (this.fade.visible) {
       this.fadeT -= dt / this.fadeSec;
       this.fade.alpha = Math.ceil(Math.max(0, this.fadeT) * 6) / 6;
       if (this.fadeT <= 0) {
@@ -216,13 +254,17 @@ export class Stage {
         this.fade.texture.destroy(true);
       }
     }
+    // 疊層跟著畫面（含直式鏡頭與換車廂的滑動）；交叉淡化時跟新畫面一起浮現
+    this.overlay.x = this.display.x - (this.portrait ? this.camX * this.cssScale : 0);
+    this.overlay.y = this.display.y + (this.portrait ? PORTRAIT_WORLD_Y * this.cssScale : 0);
+    this.overlay.alpha = this.fade.visible && this.slideDir === 0 ? 1 - this.fade.alpha : 1;
     this.renderLabels(scene);
   }
 
   private renderLabels(scene: Scene) {
     this.labelBuf.length = 0;
-    // 淡化期間舊畫面還蓋在上面，名字等新場景浮現後再出現
-    if (!this.fade.visible || this.fade.alpha < 0.5) scene.labels(this.labelBuf);
+    // 淡化或滑動期間舊畫面還蓋在上面，名字等新場景浮現後再出現
+    if (this.slideDir === 0 && (!this.fade.visible || this.fade.alpha < 0.5)) scene.labels(this.labelBuf);
     const fadeIn = this.fade.visible ? 1 - this.fade.alpha : 1;
     const out = this.labelBuf.map(l => {
       const bx = this.portrait ? l.x - this.camX : l.x;

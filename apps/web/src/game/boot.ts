@@ -1,6 +1,7 @@
 // 遊戲進入點：月台 ⇄ 車廂的旅程（docs/PRD.md 第 15 章）
 // 連線時上下車、換座位、換車廂都經過伺服器；連不上時全部在本機模擬（離線模式）。
 import { CARS, LINES, type SpotId } from '@cc/shared';
+import { mixer } from '../audio/AmbientMixer';
 import { bridge } from '../gameBridge';
 import type { NetLink } from '../net/session';
 import { actions, devParams, store } from '../store';
@@ -8,6 +9,7 @@ import { CarriageScene } from './carriage';
 import { DOORS, seatX } from './layout';
 import { PlatformScene } from './platform';
 import { Stage } from './stage';
+import { loading } from '../ui/loading';
 
 export async function boot(host: HTMLElement, net: NetLink | null) {
   const stage = new Stage();
@@ -29,28 +31,33 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
         coRiders: 0,
       },
       pomodorosDone: 0,
-      cheersReceived: 0,
+      received: { beep: 0, wave: 0, blanket: 0, fortune: 0 },
+      lastFortune: null,
     });
   };
 
   // ── 月台 ──
-  const goPlatform = (station: number, docked?: { leftMs: number; toward: number; fromDoor: number }) => {
-    stage.show(new PlatformScene({ lineId, station, docked }, { board: toward => board(station, toward) }), true);
+  // 換場景時都有載入畫面蓋著，所以不另外交叉淡化
+  const goPlatform = (station: number, docked?: { leftMs: number; toward: number; fromDoor: number }, transition = false) => {
+    stage.show(new PlatformScene({ lineId, station, docked }, { board: toward => board(station, toward) }), transition);
     store.setState({ selfState: 'idle', pomodoro: null, ui: { ...store.getState().ui, glowMenu: null, noteMenu: null, composerOpen: false } });
   };
 
   // ── 上車 ──
   const board = async (station: number, toward: number): Promise<boolean> => {
     const s = store.getState();
-    let scene: CarriageScene;
-    if (net) {
-      const snapshot = await net.board({ line: lineId, name: s.name, gender: s.gender, avatar: s.avatar, passCard: s.passCard });
-      if (!snapshot) return false;
-      scene = new CarriageScene({ kind: 'online', net, snapshot }, carriageHooks);
-    } else {
-      scene = new CarriageScene({ kind: 'offline', station, toward, car: 1 + Math.floor(Math.random() * CARS) }, carriageHooks);
-    }
-    stage.show(scene, true);
+    const snapshot = net
+      ? await loading.during(
+        '列車即將出發',
+        net.board({ line: lineId, name: s.name, gender: s.gender, avatar: s.avatar, passCard: s.passCard }),
+        { lineColor: line.color },
+      )
+      : await loading.during('列車即將出發', Promise.resolve(null), { lineColor: line.color });
+    if (net && !snapshot) return false;
+    const scene = net && snapshot
+      ? new CarriageScene({ kind: 'online', net, snapshot }, carriageHooks)
+      : new CarriageScene({ kind: 'offline', station, toward, car: 1 + Math.floor(Math.random() * CARS) }, carriageHooks);
+    stage.show(scene, false);
     startRide(scene);
     const st = store.getState();
     const terminal = line.stations[scene.train.dir === 1 ? line.stations.length - 1 : 0];
@@ -65,12 +72,17 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
       if (!scene || busy) return;
       busy = true;
       try {
-        if (net && !(await net.alight())) {
+        const train = scene.train;
+        const station = train.to;
+        const ok = await loading.during(
+          `正在走到${line.stations[station].zh}月台`,
+          net ? net.alight() : Promise.resolve(true),
+          { lineColor: line.color, minMs: 800 },
+        );
+        if (!ok) {
           actions.toast('車門要關了，下一站再下車吧。');
           return;
         }
-        const train = scene.train;
-        const station = train.to;
         const n = line.stations.length;
         // 這班車繼續往同一個方向開；終點站則折返
         const dir = train.dir;
@@ -90,15 +102,18 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
       if (!scene || busy) return;
       busy = true;
       try {
-        if (net) {
-          const snap = await net.moveCar(dir);
-          if (!snap) return actions.toast('隔壁車廂人太多了，先待在這裡吧。');
-          stage.crossfade(0.7);
-          scene.applySnapshot(snap, false);
-        } else {
-          stage.crossfade(0.7);
-          scene.moveCarLocal(scene.car + dir);
-        }
+        const target = scene.car + dir;
+        // 穿過貫通道：風聲＋載入畫面，回來時畫面往前進的方向滑動
+        mixer.playGangway();
+        const snap = await loading.during(
+          `正在切換至第 ${target} 車廂`,
+          net ? net.moveCar(dir) : Promise.resolve(null),
+          { tip: dir === 1 ? `穿過通道門，往第 ${target} 車廂走去…` : `穿過通道門，往回走到第 ${target} 車廂…`, lineColor: line.color, minMs: 700 },
+        );
+        if (net && !snap) return actions.toast('隔壁車廂人太多了，先待在這裡吧。');
+        stage.slide(dir);
+        if (snap) scene.applySnapshot(snap, false);
+        else scene.moveCarLocal(target);
         actions.toast(`走到了第 ${store.getState().car} 節車廂。`);
       } finally {
         busy = false;
@@ -152,11 +167,9 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
   };
 
   if (devParams.dev) {
-    Object.assign(window, { __scene: () => (stage.current as unknown as { debug(): unknown })?.debug() });
+    Object.assign(window, { __stage: stage, __scene: () => (stage.current as unknown as { debug(): unknown })?.debug() });
   }
 
-  // 從閘門走進月台：隨機一站（地下、高架都有機會）；開發時可用 ?station= 指定
-  const preset = Number(new URLSearchParams(location.search).get('station'));
-  const station = preset >= 1 && preset <= line.stations.length ? preset - 1 : Math.floor(Math.random() * line.stations.length);
-  goPlatform(station);
+  // 從閘門走進選好的那一站月台
+  goPlatform(store.getState().station ?? 0, undefined, false);
 }

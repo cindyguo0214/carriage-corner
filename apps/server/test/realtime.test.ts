@@ -103,16 +103,37 @@ describe('realtime server', () => {
     let senderGotGlow = false;
     a.client.on('glow', () => (senderGotGlow = true));
     const received = once(b.client, 'glow');
-    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'nod' });
-    assert.deepEqual(res, { ok: true });
+    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'beep' });
+    assert.deepEqual(res, { ok: true, data: { fortune: null } });
     const glow = await received;
-    assert.deepEqual(Object.keys(glow).sort(), ['at', 'kind', 'to']);
+    assert.deepEqual(Object.keys(glow).sort(), ['at', 'fortune', 'kind', 'to']);
     assert.equal(glow.to, b.snap.you.pid);
     await new Promise(r => setTimeout(r, 100));
     assert.equal(senderGotGlow, false);
 
-    const again = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'nod' });
+    const again = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'wave' });
     assert.deepEqual(again, { ok: false, code: 'RATE_LIMITED' }, '對同一人 2 分鐘內只能送一次');
+  });
+
+  it('遞幸運籤：送出者與收到的人拿到同一支籤；小毯只能蓋給正在補眠的人', async () => {
+    const a = await board('RV');
+    const b = await board('RV');
+    const received = once(b.client, 'glow');
+    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'fortune' });
+    assert.ok(res.ok);
+    const fortune = (res as { data: { fortune: number | null } }).data.fortune;
+    assert.equal(typeof fortune, 'number');
+    assert.equal((await received).fortune, fortune);
+
+    const c = await board('RV');
+    assert.deepEqual(
+      await a.client.timeout(2000).emitWithAck('glow:send', { to: c.snap.you.pid, kind: 'blanket' }),
+      { ok: false, code: 'NO_TARGET' },
+    );
+    await c.client.timeout(2000).emitWithAck('state:set', { state: 'sleep' });
+    const covered = once(c.client, 'glow');
+    assert.ok((await a.client.timeout(2000).emitWithAck('glow:send', { to: c.snap.you.pid, kind: 'blanket' })).ok);
+    assert.equal((await covered).kind, 'blanket');
   });
 
   it('勿擾時伺服器靜默丟棄，送出者仍收到成功', async () => {
@@ -121,8 +142,8 @@ describe('realtime server', () => {
     await b.client.timeout(2000).emitWithAck('pref:set', { dnd: true });
     let got = false;
     b.client.on('glow', () => (got = true));
-    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'nod' });
-    assert.deepEqual(res, { ok: true });
+    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'beep' });
+    assert.deepEqual(res, { ok: true, data: { fortune: null } });
     await new Promise(r => setTimeout(r, 150));
     assert.equal(got, false);
   });

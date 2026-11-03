@@ -2,7 +2,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import {
-  companionLine, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
+  companionLine, fortuneAt, FORTUNES, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
   type LineId, type SpotId, type TicketStats,
 } from '@cc/shared';
 import { drawText, textWidth } from './font';
@@ -18,7 +18,13 @@ const TicketFields = z.object({
   boardedAt: z.number().int(),
   minutes: z.number().int().min(1).max(24 * 60),
   pomodoros: z.number().int().min(0).max(99),
-  cheers: z.number().int().min(0).max(999),
+  received: z.object({
+    beep: z.number().int().min(0).max(999),
+    wave: z.number().int().min(0).max(999),
+    blanket: z.number().int().min(0).max(999),
+    fortune: z.number().int().min(0).max(999),
+  }),
+  fortune: z.number().int().min(0).max(FORTUNES.length - 1).nullable(),
   coRiders: z.number().int().min(0).max(9999),
   quote: z.number().int().min(0).max(99),
   mode: z.enum(['morning', 'night']),
@@ -63,23 +69,29 @@ export class TicketSigner {
 
 // 分享連結越短越好：以陣列取代物件鍵名、時間以秒為單位的 36 進位表示，長度約為 JSON 物件的一半
 const CARDS = ['tile', 'boba', 'ricecooker', 'mangoice'] as const;
-// 版本 2：拿掉了咖啡次數（車廂內禁止飲食）
-type Packed = [2, string, string, string, string, string, number, number, number, number, number, 0 | 1, number, string];
+// 版本 3：四種互動分開計次，加上最近收到的一支籤（-1 表示沒有）
+type Packed = [
+  3, string, string, string, string, string, number, number,
+  number, number, number, number, number,
+  number, number, 0 | 1, number, string,
+];
 
 function pack(t: TicketStats): Packed {
   return [
-    2, t.line, t.from.slice(2), t.to.slice(2), t.seat, Math.floor(t.boardedAt / 1000).toString(36),
-    t.minutes, t.pomodoros, t.cheers, t.coRiders, t.quote, t.mode === 'night' ? 1 : 0,
+    3, t.line, t.from.slice(2), t.to.slice(2), t.seat, Math.floor(t.boardedAt / 1000).toString(36),
+    t.minutes, t.pomodoros,
+    t.received.beep, t.received.wave, t.received.blanket, t.received.fortune, t.fortune ?? -1,
+    t.coRiders, t.quote, t.mode === 'night' ? 1 : 0,
     CARDS.indexOf(t.card), t.room.slice(3),
   ];
 }
 
 function unpack(a: Packed): TicketStats | null {
-  if (!Array.isArray(a) || a[0] !== 2) return null;
-  const [, line, from, to, seat, boarded, minutes, pomodoros, cheers, coRiders, quote, night, card, room] = a;
+  if (!Array.isArray(a) || a[0] !== 3) return null;
+  const [, line, from, to, seat, boarded, minutes, pomodoros, beep, wave, blanket, fortunes, fortune, coRiders, quote, night, card, room] = a;
   const parsed = TicketFields.safeParse({
     line, from: `${line}${from}`, to: `${line}${to}`, seat, boardedAt: parseInt(boarded, 36) * 1000,
-    minutes, pomodoros, cheers, coRiders, quote, mode: night ? 'night' : 'morning', card: CARDS[card], room: `${line}-${room}`,
+    minutes, pomodoros, received: { beep, wave, blanket, fortune: fortunes }, fortune: fortune < 0 ? null : fortune, coRiders, quote, mode: night ? 'night' : 'morning', card: CARDS[card], room: `${line}-${room}`,
   });
   return parsed.success && stationByCode(parsed.data.line, parsed.data.from) && stationByCode(parsed.data.line, parsed.data.to)
     ? parsed.data
@@ -126,7 +138,8 @@ export function renderOgImage(t: TicketStats): Buffer {
   b.rect(8, 84, 2, 6, pal.outside);
   b.rect(230, 84, 2, 6, pal.outside);
 
-  drawText(b, `FOCUS X${t.pomodoros}  CHEER X${t.cheers}`, 16, 94, pal.ink);
+  const r = t.received;
+  drawText(b, `FOCUS ${t.pomodoros}  BEEP ${r.beep} WAVE ${r.wave} NAP ${r.blanket} LUCK ${r.fortune}`, 16, 94, pal.ink);
   const p = taipeiParts(t.boardedAt);
   const date = `${p.y}.${String(p.mo).padStart(2, '0')}.${String(p.d).padStart(2, '0')}`;
   drawText(b, `CARRIAGE CORNER - ${OPERATOR.en}`, 16, 106, pal.muted);
@@ -199,14 +212,16 @@ export function renderLanding(t: TicketStats, token: string, origin: string): st
       <div class="row"><span>座位 <b>${esc(t.seat)}</b></span><span>隨行卡・${esc(PASS_CARDS[t.card].zh)}</span></div>
       <div class="row"><span>${p.y}.${String(p.mo).padStart(2, '0')}.${String(p.d).padStart(2, '0')}（${p.wd}）${p.hh}:${p.mm} 上車</span><span>${t.minutes} 分鐘</span></div>
       <div class="cut"></div>
-      <div>📖 專注 ×${t.pomodoros}　👏 ×${t.cheers}</div>
+      <div>📖 專注模式 ×${t.pomodoros}</div>
+      <div>🪪 嗶卡 ×${t.received.beep}　🎵 波紋 ×${t.received.wave}　💤 小毯 ×${t.received.blanket}　📜 籤 ×${t.received.fortune}</div>
+      ${t.fortune === null ? '' : `<p class="quote">收到的籤：「${esc(fortuneAt(t.fortune).text)}」${esc(fortuneAt(t.fortune).grade)}</p>`}
       <p class="muted">${esc(companionLine(t.coRiders))}</p>
       <p class="quote">「${esc(quoteOf(t))}」</p>
       <p class="muted">No. ${esc(ticketSerial(t))}</p>
     </div>
   </article>
   <a class="join" href="${esc(join)}">搭上同一條線</a>
-  <p class="legal">不需註冊・完全匿名・沒有聊天室<br>本作為獨立原創作品，路線、站名、標誌與票證皆為虛構，與任何真實營運單位無關。</p>
+  <p class="legal">不需註冊・名字隨你取・沒有聊天室<br>本作為獨立原創作品，路線、站名、標誌與票證皆為虛構，與任何真實營運單位無關。</p>
 </main>
 </body>
 </html>`;

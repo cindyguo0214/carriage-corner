@@ -1,8 +1,10 @@
-// 車窗玻璃：水蒸氣霧氣、霧氣留言（寫字處擦開，再慢慢重新凝結）、沿玻璃滑落的水珠（docs/PRD.md §2.4、§4.5）
-import { CanvasSource, Sprite, Texture } from 'pixi.js';
+// 車窗玻璃：水蒸氣霧氣、霧氣留言、沿玻璃滑落的水珠（docs/PRD.md §2.4、§4.5、§17.2）
+// 霧與水珠畫在 640×360 的像素層；留言文字另外畫在螢幕解析度的疊層（textView），
+// 這樣「繁、鬱、聽」這類多筆畫的字也有足夠的像素，筆劃之間不會黏在一起。
+import { CanvasSource, Container, Sprite, Text, Texture } from 'pixi.js';
 import { NOTE_MAX_GRAPHEMES, splitGraphemes } from '@cc/shared';
 import { WIN, windowRect } from './layout';
-import { makeCanvas, rng } from './paint';
+import { mix, makeCanvas, rng } from './paint';
 import { shade, type Palette } from './palette';
 
 const GW = WIN.w;
@@ -10,7 +12,12 @@ const GH = WIN.h;
 const FOG_TILE = GW * 2;
 /** 留言寫下後保持清晰的秒數 */
 const CLEAR_SEC = 20;
-const NOTE_FONT = '11px "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+/** 細筆劃：一般字重，不用粗體、不加實心描邊 */
+const NOTE_FAMILY = '"PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Heiti TC", sans-serif';
+/** 文字可用的寬度與起始高度（world px；窗框內留邊） */
+const TEXT_W = GW - 6;
+const TEXT_TOP = 4;
+const TEXT_BOTTOM = GH - 8;
 const CHARS_PER_LINE = 4;
 
 interface Droplet { x: number; y: number; mass: number; sliding: boolean; vy: number; wobble: number }
@@ -18,24 +25,66 @@ interface Droplet { x: number; y: number; mass: number; sliding: boolean; vy: nu
 interface Note {
   createdAt: number;
   ttlMs: number;
-  /** 每個字形像素的消散門檻（0..1），霧氣依此有機地重新凝結 */
-  pixels: { i: number; n: number }[];
-  /** 筆劃外緣聚集的小水珠：比霧深一階，讓字在明亮的晨間也讀得出來 */
-  rim: { i: number; n: number }[];
-  bucket: number;
+  /** 文字範圍（玻璃座標），在這裡霧氣會稍微濃一點，讓字的底色一致 */
+  box: { x: number; y: number; w: number; h: number };
+}
+
+/** 多筆畫的字：先在小畫布上量墨量，墨量高的字放寬字距 */
+const densityCache = new Map<string, number>();
+function inkDensity(ch: string): number {
+  let d = densityCache.get(ch);
+  if (d !== undefined) return d;
+  const { ctx } = makeCanvas(24, 24);
+  ctx.font = `24px ${NOTE_FAMILY}`;
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#000';
+  ctx.fillText(ch, 0, 0);
+  const data = ctx.getImageData(0, 0, 24, 24).data;
+  let ink = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 128) ink++;
+  d = ink / (24 * 24);
+  densityCache.set(ch, d);
+  return d;
+}
+
+/**
+ * 動態字級：字少時大一點；一行有多筆畫的字時放寬字距，必要時縮小字級以塞進窗框。
+ * 回傳每一行的字級與字距（world px）。
+ */
+function layoutNote(chars: string[]) {
+  const perLine = chars.length <= 3 ? 3 : CHARS_PER_LINE;
+  const lines: string[][] = [];
+  for (let i = 0; i < chars.length; i += perLine) lines.push(chars.slice(i, i + perLine));
+  const base = chars.length <= 3 ? 14 : 12;
+  const probe = makeCanvas(1, 1).ctx;
+  return lines.map(line => {
+    const dense = line.some(ch => inkDensity(ch) > 0.3);
+    const spacing = dense ? 1.4 : 0.7;
+    let size = base;
+    const width = (sz: number) => {
+      probe.font = `${sz}px ${NOTE_FAMILY}`;
+      return line.reduce((w, ch) => w + probe.measureText(ch).width, 0) + spacing * (line.length - 1);
+    };
+    while (size > 9 && width(size) > TEXT_W) size -= 0.5;
+    return { text: line.join(''), size, spacing };
+  });
 }
 
 export class WindowGlass {
   readonly sprite: Sprite;
+  /** 螢幕解析度的文字疊層（由 Stage 以同樣的鏡頭轉換畫在最上層） */
+  readonly textView = new Container();
   private ctx: CanvasRenderingContext2D;
   private source: CanvasSource;
   private fog!: HTMLCanvasElement;
+  private fogColor = '#ffffff';
   private trails = makeCanvas(GW, GH);
-  private mask = makeCanvas(GW, GH);
-  private rim = makeCanvas(GW, GH);
-  private rimRgb: [number, number, number] = [0, 0, 0];
   private drops: Droplet[] = [];
   private note: Note | null = null;
+  private texts: Text[] = [];
+  private inkColor = '#555555';
+  private haloColor = '#ffffff';
+  private resolution = 2;
   private fogOffset = 0;
   private dropColor = '#ffffff';
   private fogAlpha = 0.5;
@@ -47,15 +96,24 @@ export class WindowGlass {
     this.sprite = new Sprite(new Texture({ source: this.source }));
     const r = windowRect(index);
     this.sprite.position.set(r.x, r.y);
+    this.textView.position.set(r.x, r.y);
   }
 
   setPalette(pal: Palette, night: boolean) {
     this.fog = buildFogTile(pal.fog, 100 + this.index);
+    this.fogColor = pal.fog;
     this.dropColor = pal.glow;
     this.fogAlpha = night ? 0.55 : 0.42;
-    const rim = parseInt(shade(pal.fog, night ? 0.35 : 0.55).slice(1), 16);
-    this.rimRgb = [rim >> 16, (rim >> 8) & 255, rim & 255];
-    if (this.note) this.note.bucket = -1;
+    // 字是「擦開霧氣後露出的深色」，外圍一圈淡淡的亮霧光暈，讓筆劃在任何窗景前都分得開
+    this.inkColor = shade(pal.fog, night ? 0.3 : 0.42);
+    this.haloColor = mix(pal.fog, '#ffffff', 0.7);
+    for (const t of this.texts) this.styleText(t, t.style.fontSize as number, t.style.letterSpacing as number);
+  }
+
+  /** 每個裝置像素對應多少 world px 的倒數：文字以這個解析度光柵化，放大後仍清晰 */
+  setResolution(scale: number) {
+    this.resolution = Math.max(1, Math.min(6, scale));
+    for (const t of this.texts) t.resolution = this.resolution;
   }
 
   get hasNote() {
@@ -65,48 +123,50 @@ export class WindowGlass {
   /** 檢舉移除，或玩家「擦掉」（只有自己看不到） */
   clearNote() {
     this.note = null;
+    this.texts.forEach(t => t.destroy());
+    this.texts = [];
   }
 
   writeNote(text: string, ttlMs: number, now: number) {
+    this.clearNote();
     const chars = splitGraphemes(text).slice(0, NOTE_MAX_GRAPHEMES);
-    const lines: string[] = [];
-    for (let i = 0; i < chars.length; i += CHARS_PER_LINE) lines.push(chars.slice(i, i + CHARS_PER_LINE).join(''));
-
-    // 以系統中文字型畫字，再二值化成像素筆劃（正式版改用像素字型 Cubic 11）
-    const { ctx } = makeCanvas(GW, GH);
-    ctx.font = NOTE_FONT;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
-    const lineH = 13;
-    const top = GH / 2 - ((lines.length - 1) * lineH) / 2;
-    lines.forEach((line, i) => ctx.fillText(line, GW / 2, top + i * lineH));
-    const data = ctx.getImageData(0, 0, GW, GH).data;
-    const noise = rng(now % 100000);
-    const pixels: Note['pixels'] = [];
-    const stroke = new Set<number>();
-    for (let i = 0; i < GW * GH; i++) {
-      if (data[i * 4 + 3] > 90) {
-        pixels.push({ i, n: noise() });
-        stroke.add(i);
-      }
+    const lines = layoutNote(chars);
+    const lineH = (sz: number) => Math.round(sz * 1.25);
+    const total = lines.reduce((h, l) => h + lineH(l.size), 0);
+    let y = Math.max(TEXT_TOP, Math.round((TEXT_TOP + TEXT_BOTTOM) / 2 - total / 2));
+    let maxW = 0;
+    for (const l of lines) {
+      const t = new Text({ text: l.text, resolution: this.resolution });
+      this.styleText(t, l.size, l.spacing);
+      t.anchor.set(0.5, 0);
+      t.position.set(GW / 2, y);
+      maxW = Math.max(maxW, t.width);
+      this.textView.addChild(t);
+      this.texts.push(t);
+      y += lineH(l.size);
     }
-    const rim: Note['rim'] = [];
-    const seen = new Set<number>();
-    for (const i of stroke) {
-      const x = i % GW, y = Math.floor(i / GW);
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        const j = ny * GW + nx;
-        if (nx < 0 || ny < 0 || nx >= GW || ny >= GH || stroke.has(j) || seen.has(j)) continue;
-        seen.add(j);
-        rim.push({ i: j, n: noise() });
-      }
-    }
-    this.note = { createdAt: now, ttlMs, pixels, rim, bucket: -1 };
+    const top = y - total;
+    this.note = {
+      createdAt: now,
+      ttlMs,
+      box: { x: Math.round(GW / 2 - maxW / 2 - 3), y: top - 2, w: Math.round(maxW + 6), h: total + 4 },
+    };
   }
 
-  /** 每次約 50 ms 呼叫一次：重繪霧、字、水珠並上傳貼圖 */
+  private styleText(t: Text, size: number, spacing: number) {
+    t.style = {
+      fontFamily: NOTE_FAMILY,
+      fontSize: size,
+      fontWeight: '400',
+      letterSpacing: spacing,
+      fill: this.inkColor,
+      // 低透明度的柔光取代實心描邊：不會填滿筆劃之間的空隙
+      dropShadow: { color: this.haloColor, alpha: 0.55, blur: 1.6, distance: 0, angle: 0 },
+      padding: 3,
+    };
+  }
+
+  /** 每次約 50 ms 呼叫一次：重繪霧與水珠並上傳貼圖；留言隨霧氣重新凝結而淡去 */
   update(dt: number, now: number, raining: boolean, speed: number, reducedMotion: boolean) {
     this.simulateDrops(dt, raining, speed, reducedMotion);
     const { ctx } = this;
@@ -120,13 +180,24 @@ export class WindowGlass {
     ctx.drawImage(this.fog, FOG_TILE - off, 0);
     ctx.globalAlpha = 1;
 
-    // 寫字與水痕的地方把霧擦掉
+    const clarity = this.noteClarity(now);
+    if (this.note && clarity > 0) {
+      // 字底下的霧稍微濃一點：不論窗外是晨光還是夜景，字的底色都差不多
+      const { x, y, w, h } = this.note.box;
+      ctx.globalAlpha = 0.3 * clarity;
+      ctx.fillStyle = this.fogColor;
+      ctx.fillRect(x + 1, y, w - 2, h);
+      ctx.fillRect(x, y + 1, w, h - 2);
+      ctx.globalAlpha = 1;
+    }
+    // 留言以 6 階量化淡出，維持像素遊戲的節奏感
+    this.textView.alpha = Math.ceil(clarity * 6) / 6;
+    if (this.note && clarity <= 0) this.clearNote();
+
+    // 水痕的地方把霧擦掉
     ctx.globalCompositeOperation = 'destination-out';
-    if (this.note) this.drawNoteMask(now);
-    if (this.note) ctx.drawImage(this.mask.canvas, 0, 0);
     ctx.drawImage(this.trails.canvas, 0, 0);
     ctx.globalCompositeOperation = 'source-over';
-    if (this.note) ctx.drawImage(this.rim.canvas, 0, 0);
 
     for (const d of this.drops) {
       const size = d.mass < 0.5 ? 1 : d.mass < 1.1 ? 2 : 3;
@@ -143,31 +214,14 @@ export class WindowGlass {
     this.source.update();
   }
 
-  private drawNoteMask(now: number) {
-    const note = this.note!;
+  /** 1 = 剛寫下、清清楚楚；0 = 被霧完全蓋住 */
+  private noteClarity(now: number) {
+    const note = this.note;
+    if (!note) return 0;
     const age = now - note.createdAt;
     const fadeSpan = Math.max(1, note.ttlMs - CLEAR_SEC * 1000);
     const k = Math.min(1, Math.max(0, (age - CLEAR_SEC * 1000) / fadeSpan));
-    const clarity = 1 - k * k * (3 - 2 * k);
-    if (clarity <= 0) {
-      this.note = null;
-      return;
-    }
-    const bucket = Math.round(clarity * 40);
-    if (bucket === note.bucket) return;
-    note.bucket = bucket;
-    const { ctx } = this.mask;
-    const img = ctx.createImageData(GW, GH);
-    for (const { i, n } of note.pixels) if (n < clarity * 1.08) img.data[i * 4 + 3] = 235;
-    ctx.putImageData(img, 0, 0);
-
-    const rimImg = this.rim.ctx.createImageData(GW, GH);
-    const [r, g, b] = this.rimRgb;
-    for (const { i, n } of note.rim) {
-      if (n >= clarity * 1.08) continue;
-      rimImg.data.set([r, g, b, 110], i * 4);
-    }
-    this.rim.ctx.putImageData(rimImg, 0, 0);
+    return 1 - k * k * (3 - 2 * k);
   }
 
   private simulateDrops(dt: number, raining: boolean, speed: number, reducedMotion: boolean) {
