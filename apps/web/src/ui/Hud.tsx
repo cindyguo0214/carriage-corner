@@ -5,15 +5,20 @@ import {
 } from '@cc/shared';
 import { mixer, type Channel } from '../audio/AmbientMixer';
 import { bridge } from '../gameBridge';
-import { actions, devParams, store, useApp } from '../store';
+import { actions, devParams, store, useApp, type PlatformPhase } from '../store';
 import { TicketModal } from './TicketModal';
 
 const STATES: { state: PaxState; icon: string; label: string }[] = [
   { state: 'idle', icon: '🪟', label: '看窗外' },
-  { state: 'coffee', icon: '☕', label: '喝咖啡' },
   { state: 'music', icon: '🎧', label: '戴耳機' },
   { state: 'read', icon: '📖', label: '閱讀・番茄鐘' },
   { state: 'sleep', icon: '😴', label: '補眠' },
+];
+
+const GLOWS: { kind: GlowKind; label: string }[] = [
+  { kind: 'nod', label: '🙂 點頭致意' },
+  { kind: 'light', label: '✨ 遞上微光' },
+  { kind: 'pat', label: '🤝 拍拍肩膀' },
 ];
 
 const CHANNELS: { ch: Channel; icon: string; label: string }[] = [
@@ -61,15 +66,10 @@ export function Hud() {
 
 function TopBar() {
   const theme = useTheme();
-  const lineId = useApp(s => s.line);
-  const train = useApp(s => s.train);
+  const scene = useApp(s => s.scene);
   const mode = useApp(s => s.mode);
   const seat = useApp(s => s.selfSeat);
   const net = useApp(s => s.net);
-  const line = LINES[lineId];
-  const dir = train.to > train.from ? 1 : -1;
-  const terminal = line.stations[dir === 1 ? line.stations.length - 1 : 0];
-  const next = line.stations[train.to];
   const [clock, setClock] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setClock(new Date()), 15_000);
@@ -79,19 +79,10 @@ function TopBar() {
 
   return (
     <header className="flex flex-wrap items-start justify-between gap-2">
-      <div className={`pointer-events-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap rounded px-3 py-2 ${theme.panel}`}>
-        <span className="flex items-center gap-1.5 font-medium">
-          <span className="inline-block size-2.5 rounded-[2px]" style={{ background: line.color }} />
-          {line.id} {line.zh}
-        </span>
-        <span className="opacity-70">往 {terminal.zh}</span>
-        <span aria-live="polite">
-          {train.phase === 'dwell' ? <>到站 ▸ <b>{next.zh}</b></> : <>下一站 ▸ <b>{next.zh}</b></>}
-        </span>
-      </div>
+      {scene === 'platform' ? <PlatformInfo /> : <TrainInfo />}
       <div className={`pointer-events-auto ml-auto flex shrink-0 items-center gap-2 rounded px-3 py-2 ${theme.panel}`}>
         <NetBadge net={net} />
-        {seat && <span className="whitespace-nowrap opacity-70">Seat {seat}</span>}
+        {scene === 'carriage' && seat && <span className="whitespace-nowrap opacity-70">{seat.startsWith('S') ? '站著' : `Seat ${seat}`}</span>}
         <span aria-hidden>{mode === 'night' ? '🌃' : '🌅'}</span>
         <span className="tabular-nums">{hhmm}</span>
         {devParams.dev && (
@@ -107,6 +98,85 @@ function TopBar() {
   );
 }
 
+function TrainInfo() {
+  const theme = useTheme();
+  const lineId = useApp(s => s.line);
+  const train = useApp(s => s.train);
+  const car = useApp(s => s.car);
+  const cars = useApp(s => s.cars);
+  const line = LINES[lineId];
+  const dir = train.to > train.from ? 1 : -1;
+  const terminal = line.stations[dir === 1 ? line.stations.length - 1 : 0];
+  const next = line.stations[train.to];
+  return (
+    <div className={`pointer-events-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap rounded px-3 py-2 ${theme.panel}`}>
+      <span className="flex items-center gap-1.5 font-medium">
+        <span className="inline-block size-2.5 rounded-[2px]" style={{ background: line.color }} />
+        {line.id} {line.zh}
+      </span>
+      <span className="opacity-70">往 {terminal.zh}</span>
+      <span aria-live="polite">
+        {train.phase === 'dwell' ? <>到站 ▸ <b>{next.zh}</b></> : <>下一站 ▸ <b>{next.zh}</b></>}
+      </span>
+      <span className="flex items-center gap-1" aria-label={`第 ${car} 節車廂，共 ${cars} 節`}>
+        <button
+          aria-label="走到前一節車廂"
+          disabled={car <= 1}
+          className={`rounded px-1.5 disabled:opacity-30 ${theme.chip}`}
+          onClick={() => bridge.game?.moveCar(-1)}
+        >
+          ◀
+        </button>
+        <span className="tabular-nums">第 {car}/{cars} 節</span>
+        <button
+          aria-label="走到後一節車廂"
+          disabled={car >= cars}
+          className={`rounded px-1.5 disabled:opacity-30 ${theme.chip}`}
+          onClick={() => bridge.game?.moveCar(1)}
+        >
+          ▶
+        </button>
+      </span>
+    </div>
+  );
+}
+
+const PLATFORM_STATUS: Record<PlatformPhase, string> = {
+  away: '下一班車',
+  arriving: '列車進站中',
+  open: '車門開啟・請上車',
+  closing: '車門關閉中',
+  leaving: '列車出站',
+};
+
+function PlatformInfo() {
+  const theme = useTheme();
+  const lineId = useApp(s => s.line);
+  const platform = useApp(s => s.platform);
+  const line = LINES[lineId];
+  const station = line.stations[platform.station];
+  const toward = line.stations[platform.toward];
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
+  const left = Math.max(0, Math.ceil((platform.at - now) / 1000));
+  return (
+    <div className={`pointer-events-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap rounded px-3 py-2 ${theme.panel}`}>
+      <span className="flex items-center gap-1.5 font-medium">
+        <span className="inline-block size-2.5 rounded-[2px]" style={{ background: line.color }} />
+        {station.zh} 月台
+      </span>
+      <span className="opacity-70">往 {toward.zh}</span>
+      <span aria-live="polite">
+        {PLATFORM_STATUS[platform.phase]}
+        {platform.phase === 'away' && <> ▸ <b className="tabular-nums">{left} 秒</b></>}
+      </span>
+    </div>
+  );
+}
+
 function NetBadge({ net }: { net: 'online' | 'reconnecting' | 'offline' }) {
   const label = { online: '同車連線中', reconnecting: '訊號較弱，重新連線中', offline: '離線模式：車廂裡的人是本機模擬' }[net];
   const color = { online: 'bg-sage', reconnecting: 'bg-lamp animate-pulse', offline: 'bg-rose' }[net];
@@ -117,7 +187,7 @@ function NetBadge({ net }: { net: 'online' | 'reconnecting' | 'offline' }) {
   );
 }
 
-/** 只有自己看得到的輕提示：例如收到別人遞來的咖啡 */
+/** 只有自己看得到的輕提示：例如有人對你點頭 */
 function Toast() {
   const theme = useTheme();
   const toast = useApp(s => s.toast);
@@ -162,51 +232,90 @@ function Subtitle() {
 }
 
 function BottomBar() {
-  const theme = useTheme();
-  const selfState = useApp(s => s.selfState);
+  const scene = useApp(s => s.scene);
   const mixerOpen = useApp(s => s.ui.mixerOpen);
   return (
     <div className="relative flex flex-col items-center">
       {mixerOpen && <MixerPanel />}
-      <nav aria-label="乘客動作" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
-        {STATES.map(s => (
-          <button
-            key={s.state}
-            aria-pressed={selfState === s.state}
-            aria-label={s.label}
-            title={s.label}
-            className={`rounded px-2.5 py-1.5 text-base transition-colors ${selfState === s.state ? theme.chipOn : theme.chip}`}
-            onClick={() => {
-              actions.setSelfState(s.state);
-              if (s.state === 'music') {
-                void mixer.setChannel('lofi', true);
-                actions.setUi({ mixerOpen: true });
-              }
-            }}
-          >
-            {s.icon}
-          </button>
-        ))}
-        <Pomodoro />
-        <span className="mx-1 h-6 w-px bg-current opacity-20" aria-hidden />
-        <button className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => actions.setUi({ composerOpen: true, glowMenu: null })}>
-          ✍ 寫在車窗
-        </button>
+      {scene === 'platform' ? <PlatformBar /> : <CarriageBar />}
+    </div>
+  );
+}
+
+function PlatformBar() {
+  const theme = useTheme();
+  const hasRide = useApp(s => !!s.ride);
+  return (
+    <nav aria-label="月台" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
+      <span className="px-2 opacity-80">點長椅坐下・車門開了點車門上車</span>
+      <span className="mx-1 h-6 w-px bg-current opacity-20" aria-hidden />
+      <ExtraButtons ticket={hasRide} />
+    </nav>
+  );
+}
+
+function CarriageBar() {
+  const theme = useTheme();
+  const selfState = useApp(s => s.selfState);
+  const standing = useApp(s => !!s.selfSeat?.startsWith('S'));
+  const dwell = useApp(s => s.train.phase === 'dwell');
+  return (
+    <nav aria-label="乘客動作" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
+      {!standing && STATES.map(s => (
         <button
-          aria-expanded={mixerOpen}
-          className={`rounded px-2.5 py-1.5 ${mixerOpen ? theme.chipOn : theme.chip}`}
-          onClick={() => actions.setUi({ mixerOpen: !mixerOpen })}
+          key={s.state}
+          aria-pressed={selfState === s.state}
+          aria-label={s.label}
+          title={s.label}
+          className={`rounded px-2.5 py-1.5 text-base transition-colors ${selfState === s.state ? theme.chipOn : theme.chip}`}
+          onClick={() => {
+            actions.setSelfState(s.state);
+            if (s.state === 'music') {
+              void mixer.setChannel('lofi', true);
+              actions.setUi({ mixerOpen: true });
+            }
+          }}
         >
-          🎚 音效
+          {s.icon}
         </button>
+      ))}
+      {standing && <span className="px-2 opacity-80">拉著吊環・點空位坐下</span>}
+      <Pomodoro />
+      <span className="mx-1 h-6 w-px bg-current opacity-20" aria-hidden />
+      <button className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => actions.setUi({ composerOpen: true, glowMenu: null })}>
+        ✍ 寫在車窗
+      </button>
+      {dwell && (
+        <button className={`rounded px-2.5 py-1.5 ${theme.chipOn}`} onClick={() => bridge.game?.alight()}>
+          🚪 下車
+        </button>
+      )}
+      <ExtraButtons ticket />
+    </nav>
+  );
+}
+
+function ExtraButtons({ ticket }: { ticket: boolean }) {
+  const theme = useTheme();
+  const mixerOpen = useApp(s => s.ui.mixerOpen);
+  return (
+    <>
+      <button
+        aria-expanded={mixerOpen}
+        className={`rounded px-2.5 py-1.5 ${mixerOpen ? theme.chipOn : theme.chip}`}
+        onClick={() => actions.setUi({ mixerOpen: !mixerOpen })}
+      >
+        🎚 音效
+      </button>
+      {ticket && (
         <button
           className={`rounded px-2.5 py-1.5 ${theme.chip}`}
           onClick={() => actions.setUi({ ticketOpen: true, mixerOpen: false, glowMenu: null, noteMenu: null })}
         >
           🎫 車票
         </button>
-      </nav>
-    </div>
+      )}
+    </>
   );
 }
 
@@ -338,17 +447,23 @@ function GlowMenu() {
     bridge.game?.glow(menu.seat, kind);
     actions.setUi({ glowMenu: null });
   };
-  const x = Math.min(menu.x, window.innerWidth - 180);
-  const y = Math.max(menu.y - 64, 8);
+  const x = Math.max(8, Math.min(menu.x - 140, window.innerWidth - 330));
+  const y = Math.max(menu.y - 90, 8);
   return (
     <div
       role="menu"
-      aria-label={`對 Seat ${menu.seat} 送出微光`}
-      className={`pointer-events-auto fixed flex gap-1 rounded p-1.5 ${theme.panel}`}
+      aria-label={`對 ${menu.name} 送出微光`}
+      className={`pointer-events-auto fixed flex flex-col gap-1 rounded p-1.5 ${theme.panel}`}
       style={{ left: x, top: y }}
     >
-      <button role="menuitem" autoFocus className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => send('coffee')}>☕ 遞上咖啡</button>
-      <button role="menuitem" className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => send('cheer')}>👏 點頭加油</button>
+      <span className="px-1 text-xs opacity-70">給 {menu.name}（對方不會知道是誰）</span>
+      <div className="flex gap-1">
+        {GLOWS.map((g, i) => (
+          <button key={g.kind} role="menuitem" autoFocus={i === 0} className={`whitespace-nowrap rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => send(g.kind)}>
+            {g.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

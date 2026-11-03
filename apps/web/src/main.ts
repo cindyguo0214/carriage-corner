@@ -1,5 +1,5 @@
 import './styles.css';
-import type { AvatarId, LineId, PassCardId } from '@cc/shared';
+import { looksLikeContact, tidyName, type AvatarId, type Gender, type LineId, type PassCardId } from '@cc/shared';
 import { mixer } from './audio/AmbientMixer';
 import { devParams, modeForHour, store } from './store';
 
@@ -12,6 +12,42 @@ const netModule = REALTIME ? import('./net/session') : null;
 
 const gate = document.getElementById('gate')!;
 const boardButton = document.getElementById('board') as HTMLButtonElement;
+const nameInput = document.getElementById('name') as HTMLInputElement;
+const nameError = document.getElementById('name-error')!;
+
+// 記住上次的名字與性別（只存在這台裝置）
+const PROFILE_KEY = 'cc.profile';
+try {
+  const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null') as { name?: string; gender?: Gender } | null;
+  if (saved?.name) nameInput.value = saved.name;
+  if (saved?.gender === 'm' || saved?.gender === 'f') {
+    store.setState({ gender: saved.gender });
+    gate.querySelectorAll('[data-group="gender"] button').forEach(b =>
+      b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.value === saved.gender)),
+    );
+  }
+} catch { /* 沒有就算了 */ }
+
+nameInput.addEventListener('input', () => (nameError.textContent = ''));
+nameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.isComposing) boardButton.click();
+});
+
+/** 名字留白就請對方填；看起來像聯絡方式的不收 */
+function readName(): string | null {
+  const name = tidyName(nameInput.value);
+  if (!name) {
+    nameError.textContent = '先取個名字吧，會顯示在你的頭上。';
+    nameInput.focus();
+    return null;
+  }
+  if (looksLikeContact(name)) {
+    nameError.textContent = '名字裡不能放聯絡方式喔。';
+    nameInput.focus();
+    return null;
+  }
+  return name;
+}
 
 for (const group of gate.querySelectorAll<HTMLElement>('[data-group]')) {
   group.addEventListener('click', e => {
@@ -19,8 +55,9 @@ for (const group of gate.querySelectorAll<HTMLElement>('[data-group]')) {
     if (!button) return;
     group.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
     const value = button.dataset.value!;
-    const key = group.dataset.group as 'line' | 'avatar' | 'passCard';
+    const key = group.dataset.group as 'line' | 'gender' | 'avatar' | 'passCard';
     if (key === 'line') store.setState({ line: value as LineId });
+    if (key === 'gender') store.setState({ gender: value as Gender });
     if (key === 'avatar') store.setState({ avatar: value as AvatarId });
     if (key === 'passCard') store.setState({ passCard: value as PassCardId });
   });
@@ -36,26 +73,31 @@ if (presetLine === 'CX' || presetLine === 'RV' || presetLine === 'SK') {
 }
 
 boardButton.addEventListener('click', async () => {
+  const name = readName();
+  if (!name) return;
   // 必須在點擊事件內同步呼叫，瀏覽器才允許出聲
   void mixer.unlock();
   boardButton.disabled = true;
-  boardButton.textContent = '嗶！列車進站中……';
+  boardButton.textContent = '嗶！走進月台……';
+  store.setState({ name });
   try {
-    const { line, avatar, passCard } = store.getState();
-    // 連線與模組下載同時進行；連不上伺服器時 session 為 null，改用離線模式
-    const [{ boot }, { mountHud }, session] = await Promise.all([
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ name, gender: store.getState().gender }));
+  } catch { /* 無痕模式 */ }
+  try {
+    // 連線與模組下載同時進行；連不上伺服器時 net 為 null，改用離線模式
+    const [{ boot }, { mountHud }, net] = await Promise.all([
       gameModule,
       hudModule,
-      netModule ? netModule.then(m => m.connectAndBoard({ line, avatar, passCard })) : null,
+      netModule ? netModule.then(m => m.connect()) : null,
     ]);
-    await boot(document.getElementById('stage')!, session);
+    await boot(document.getElementById('stage')!, net);
     mountHud(document.getElementById('hud')!);
     store.setState({ boarded: true });
     gate.classList.add('gate--leaving');
   } catch (err) {
     console.error(err);
     boardButton.disabled = false;
-    boardButton.textContent = '列車暫時無法進站，再感應一次';
+    boardButton.textContent = '閘門暫時打不開，再感應一次';
   }
 });
 

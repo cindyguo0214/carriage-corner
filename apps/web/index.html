@@ -47,6 +47,9 @@
       .board[disabled] { opacity: .6; cursor: progress; }
       .fine { text-align: center; font-size: 12px; color: #8b857d; margin: 12px 0 0; letter-spacing: .1em; }
       .legal { text-align: center; font-size: 10px; color: #9a948b; margin: 8px 0 0; line-height: 1.5; }
+      .name { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: #fffaf1; border: 2px solid #cfc6b8; border-radius: 4px; padding: 9px 10px; }
+      .name:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; border-color: var(--ink); }
+      .name-error { min-height: 1.2em; margin: 4px 0 0; font-size: 12px; color: var(--rose); }
     </style>
   </head>
   <body>
@@ -71,6 +74,16 @@
         <h1 id="gate-title">車廂角落</h1>
         <p class="sub">CARRIAGE CORNER</p>
 
+        <p class="q"><label for="name">你的名字（會顯示在頭上）</label></p>
+        <input class="name" id="name" type="text" maxlength="16" placeholder="例如：小安" autocomplete="nickname" enterkeyhint="go" />
+        <p class="name-error" id="name-error" role="alert"></p>
+
+        <p class="q" id="q-gender">性別</p>
+        <div class="opts" role="group" aria-labelledby="q-gender" data-group="gender">
+          <button class="opt" data-value="m" aria-pressed="true">👦 男生</button>
+          <button class="opt" data-value="f" aria-pressed="false">👧 女生</button>
+        </div>
+
         <p class="q" id="q-line">今天想搭哪條線？</p>
         <div class="opts" role="group" aria-labelledby="q-line" data-group="line">
           <button class="opt" data-value="CX" aria-pressed="true"><span class="dot" style="background:var(--core)"></span>CX 城心線</button>
@@ -78,7 +91,7 @@
           <button class="opt" data-value="SK" aria-pressed="false"><span class="dot" style="background:var(--khaki)"></span>SK 雲橋線</button>
         </div>
 
-        <p class="q" id="q-avatar">你是哪一位乘客？</p>
+        <p class="q" id="q-avatar">今天穿什麼出門？</p>
         <div class="opts" role="group" aria-labelledby="q-avatar" data-group="avatar">
           <button class="opt" data-value="office" aria-pressed="true">👔 上班族</button>
           <button class="opt" data-value="student" aria-pressed="false">🎒 學生</button>
@@ -95,7 +108,7 @@
         </div>
 
         <button class="board" id="board" type="button">嗶！感應隨行卡進站</button>
-        <p class="fine">不需註冊・完全匿名・沒有聊天室</p>
+        <p class="fine">不需註冊・名字隨你取・沒有聊天室</p>
         <p class="legal">本作為獨立原創作品，路線、站名、標誌與票證皆為虛構，與任何真實營運單位無關。</p>
       </section>
     </main>

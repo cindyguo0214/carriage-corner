@@ -2,11 +2,11 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { z } from 'zod';
-import type { ClientToServer, ServerToClient } from '@cc/shared';
+import { FALLBACK_NAME, HARD_CAP, SPOTS, tidyName, type ClientToServer, type ServerToClient } from '@cc/shared';
 import type { Config } from './config';
 import { Limiter } from './limiter';
 import { moderate, Moderation } from './moderation';
-import { publicPax, type Emit } from './rooms/Room';
+import { publicPax, type Emit, type Room } from './rooms/Room';
 import { RoomManager } from './rooms/RoomManager';
 import { Sessions } from './sessions';
 import { handleTicketRoutes } from './ticket/routes';
@@ -22,17 +22,28 @@ const BoardReq = z.object({
   sid: z.string().min(8).max(64),
   resumeToken: z.string().max(1024).nullable(),
   line: z.enum(['CX', 'RV', 'SK']),
+  name: z.string().max(64),
+  gender: z.enum(['m', 'f']),
   avatar: z.enum(['office', 'student', 'hoodie', 'headphone']),
   passCard: z.enum(['tile', 'boba', 'ricecooker', 'mangoice']),
 });
-const StateReq = z.object({ state: z.enum(['idle', 'coffee', 'music', 'read', 'sleep']) });
-const GlowReq = z.object({ to: z.string().max(32), kind: z.enum(['coffee', 'cheer']) });
+const StateReq = z.object({ state: z.enum(['idle', 'music', 'read', 'sleep']) });
+const GlowReq = z.object({ to: z.string().max(32), kind: z.enum(['nod', 'light', 'pat']) });
+const SeatReq = z.object({ seat: z.enum(SPOTS as [string, ...string[]]).transform(s => s as (typeof SPOTS)[number]) });
+const CarReq = z.object({ dir: z.union([z.literal(-1), z.literal(1)]) });
 const NoteReq = z.object({ text: z.string().max(200) });
 const NidReq = z.object({ nid: z.string().max(32) });
 const PrefReq = z.object({ dnd: z.boolean() });
 
 const BAD = { ok: false, code: 'BAD_REQUEST' } as const;
 const LIMITED = { ok: false, code: 'RATE_LIMITED' } as const;
+
+/** 名字也走留言的過濾：聯絡方式、詞庫、自傷字詞都不能當名字，被擋時改用替代名 */
+function safeName(raw: string) {
+  // 先檢查完整字串再截斷，避免截掉一半的聯絡方式剛好漏網
+  const verdict = moderate(tidyName(raw, 64), 64);
+  return verdict.ok ? tidyName(verdict.text) : FALLBACK_NAME;
+}
 
 export interface RealtimeServer {
   http: HttpServer;
@@ -82,7 +93,7 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
     socket.on('board', async (raw, ack) => {
       const req = BoardReq.safeParse(raw);
       if (!req.success || socket.data.pid) return ack(BAD);
-      const { sid, resumeToken, line, avatar } = req.data;
+      const { sid, resumeToken, line, name, gender, avatar } = req.data;
       if (!limiter.take(`board:${sid}`, 5, 60_000)) return ack(LIMITED);
 
       // 座位還保留就復位（同一個 sid、仍在寬限內）
@@ -91,13 +102,58 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
       let pax = room && claims ? room.resume(claims.pid, sid) : null;
       if (!room || !pax) {
         room = rooms.assign(line);
-        pax = room.seatHuman(sid, avatar);
-        socket.to(room.id).emit('pax:join', { ...publicPax(pax), via: 'gangway' });
+        pax = room.seatHuman(sid, { name: safeName(name), gender, avatar });
+        socket.to(room.id).emit('pax:join', { ...publicPax(pax), via: 'door' });
       }
-      socket.data = { pid: pax.pid, roomId: room.id, sid };
+      await enter(room, pax.pid, sid);
+      ack({ ok: true, data: room.snapshotFor(pax, sessions.issue({ sid, pid: pax.pid, roomId: room.id })) });
+    });
+
+    const enter = async (room: Room, pid: string, sid: string) => {
+      socket.data = { pid, roomId: room.id, sid };
       await socket.join(room.id);
-      const token = sessions.issue({ sid, pid: pax.pid, roomId: room.id });
-      ack({ ok: true, data: room.snapshotFor(pax, token) });
+    };
+    const exit = async (room: Room) => {
+      socket.data = { sid: socket.data.sid };
+      await socket.leave(room.id);
+    };
+
+    socket.on('alight', async (_raw, ack) => {
+      const ctx = current();
+      if (!ctx) return ack(BAD);
+      // 只有到站開門時能下車
+      if (ctx.room.run.phase !== 'dwell') return ack({ ok: false, code: 'NO_TARGET' });
+      ctx.room.removeHuman(ctx.pax.pid);
+      socket.to(ctx.room.id).emit('pax:leave', { pid: ctx.pax.pid, reason: 'station' });
+      await exit(ctx.room);
+      ack({ ok: true });
+    });
+
+    socket.on('seat:move', (raw, ack) => {
+      const req = SeatReq.safeParse(raw);
+      const ctx = current();
+      if (!req.success || !ctx) return ack(BAD);
+      if (!limiter.take(`seat:${ctx.pax.pid}`, 6, 60_000)) return ack(LIMITED);
+      if (!ctx.room.moveSeat(ctx.pax.pid, req.data.seat)) return ack({ ok: false, code: 'NO_TARGET' });
+      socket.to(ctx.room.id).emit('pax:move', { pid: ctx.pax.pid, seat: req.data.seat });
+      ack({ ok: true });
+    });
+
+    socket.on('car:move', async (raw, ack) => {
+      const req = CarReq.safeParse(raw);
+      const ctx = current();
+      if (!req.success || !ctx) return ack(BAD);
+      if (!limiter.take(`car:${ctx.pax.pid}`, 6, 60_000)) return ack(LIMITED);
+      const next = ctx.room.run.carAt(ctx.room.car + req.data.dir);
+      if (!next || next.realCount >= HARD_CAP) return ack({ ok: false, code: 'NO_TARGET' });
+      const sid = socket.data.sid!;
+      const moving = ctx.room.removeHuman(ctx.pax.pid)!;
+      socket.to(ctx.room.id).emit('pax:leave', { pid: moving.pid, reason: 'transfer' });
+      await exit(ctx.room);
+      const pax = next.seatHuman(sid, moving, moving);
+      socket.to(next.id).emit('pax:join', { ...publicPax(pax), via: 'gangway' });
+      await enter(next, pax.pid, sid);
+      ack({ ok: true, data: next.snapshotFor(pax, sessions.issue({ sid, pid: pax.pid, roomId: next.id })) });
     });
 
     socket.on('state:set', (raw, ack) => {

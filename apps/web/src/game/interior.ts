@@ -12,14 +12,35 @@ export interface InteriorArt {
   front: Texture;
   /** 吊環：索引 0..4 對應傾斜 -2..+2 px */
   straps: Texture[];
+  /** 車門左右兩片門扇（門窗挖空） */
+  doorLeaves: [Texture, Texture];
 }
+
+/** 門洞（門扇滑開後露出的範圍） */
+export const DOOR_TOP = 42;
+export const doorHole = (d: { x: number; w: number }) => ({ x: d.x + 2, y: DOOR_TOP, w: d.w - 4, h: FLOOR_Y - DOOR_TOP });
+/** 兩端貫通道的寬度 */
+export const GANGWAY_W = 16;
 
 export function buildInterior(pal: Palette, seatColor: 'blue' | 'yellow'): InteriorArt {
   return {
     back: paint(W, H, p => drawBack(p, pal, seatColor)),
     front: paint(W, H - B_PANEL_Y, p => drawFront(p, pal, seatColor)),
     straps: [-2, -1, 0, 1, 2].map(lean => paint(9, 40, p => drawStrap(p, pal, lean))),
+    doorLeaves: [0, 1].map(side => paint(DOORS[0].w / 2 - 2, FLOOR_Y - DOOR_TOP, p => drawDoorLeaf(p, pal, side === 1))) as [Texture, Texture],
   };
+}
+
+/** 一片門扇：內側邊緣較深，門窗挖空讓窗外透進來 */
+function drawDoorLeaf(p: Painter, pal: Palette, right: boolean) {
+  const w = DOORS[0].w / 2 - 2;
+  const h = FLOOR_Y - DOOR_TOP;
+  p.rect(0, 0, w, h, pal.door);
+  p.rect(right ? 0 : w - 1, 0, 1, h, pal.doorLo);
+  p.rect(0, h - 4, w, 4, pal.doorLo);
+  const wx = right ? 6 : 7;
+  p.round(wx - 1, 17, 24, 52, pal.doorLo);
+  p.clear(wx, 18, 22, 50);
 }
 
 function seatTone(pal: Palette, seatColor: 'blue' | 'yellow', seat: SeatId) {
@@ -53,25 +74,28 @@ function drawBack(p: Painter, pal: Palette, seatColor: 'blue' | 'yellow') {
     p.rect(r.x - 2, r.y + r.h + 2, r.w + 4, 2, pal.metal);
   }
 
-  // 車門（含門窗）與門上方 LED 路線圖框
+  // 車門框（門扇是獨立的圖層，到站時滑開）與門上方 LED 路線圖框
   for (const d of DOORS) {
-    p.rect(d.x, 40, d.w, FLOOR_Y - 40, pal.door);
     p.rect(d.x, 40, d.w, 2, pal.metalLo);
-    p.rect(d.x + d.w / 2 - 1, 40, 2, FLOOR_Y - 40, pal.doorLo);
     p.rect(d.x, 40, 2, FLOOR_Y - 40, pal.doorLo); p.rect(d.x + d.w - 2, 40, 2, FLOOR_Y - 40, pal.doorLo);
-    for (const wx of [d.x + 8, d.x + d.w / 2 + 7]) {
-      p.round(wx - 1, 59, 24, 52, pal.doorLo);
-      p.clear(wx, 60, 22, 50);
-    }
+    const hole = doorHole(d);
+    p.clear(hole.x, hole.y, hole.w, hole.h);
     p.rect(d.x + 4, 6, d.w - 8, 20, pal.metalLo);
     p.rect(d.x + 5, 7, d.w - 10, 18, pal.led);
     p.rect(d.x, FLOOR_Y, d.w, 3, pal.metal);
     p.rect(d.x, FLOOR_Y + 3, d.w, 2, pal.warning);
   }
 
-  // 車廂兩端的貫通道
-  p.rect(0, 40, 14, FLOOR_Y - 40, pal.wallShade);
-  p.rect(626, 40, 14, FLOOR_Y - 40, pal.wallShade);
+  // 車廂兩端的貫通道：門框＋通往隔壁車廂的暗處，中間一個小箭頭
+  for (const [x, dir] of [[0, -1], [W - GANGWAY_W, 1]] as const) {
+    p.rect(x, 40, GANGWAY_W, FLOOR_Y - 40, pal.metalLo);
+    p.rect(x + 2, 44, GANGWAY_W - 4, FLOOR_Y - 44, pal.led);
+    p.rect(x + 3, 46, GANGWAY_W - 6, FLOOR_Y - 48, pal.wallShade);
+    const ax = x + GANGWAY_W / 2;
+    for (let i = 0; i < 3; i++) {
+      p.rect(ax - dir * i - (dir === 1 ? 1 : 0), 100 - i, 1, 1 + i * 2, pal.ledOn);
+    }
+  }
 
   // 地板
   p.rect(0, FLOOR_Y, W, H - FLOOR_Y, pal.floor);

@@ -51,6 +51,34 @@ export class Painter {
   }
 }
 
+const TEXT_FONT = '"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif';
+
+/**
+ * 像素字：先用系統字型畫在暫存畫布，再把半透明的邊緣二值化，放大後才是清楚的像素字而不是糊邊。
+ * align 'center' 時 x 為中心點。回傳文字寬度。
+ */
+export function pixelText(
+  p: Painter, text: string, x: number, y: number, size: number, color: string,
+  opts: { align?: 'left' | 'center'; bold?: boolean } = {},
+): number {
+  const probe = makeCanvas(1, 1).ctx;
+  const font = `${opts.bold ? '700 ' : ''}${size}px ${TEXT_FONT}`;
+  probe.font = font;
+  const w = Math.ceil(probe.measureText(text).width) + 2;
+  const h = Math.ceil(size * 1.4);
+  const { canvas, ctx } = makeCanvas(w, h);
+  ctx.font = font;
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = color;
+  ctx.fillText(text, 1, Math.round(size * 0.1));
+  const img = ctx.getImageData(0, 0, w, h);
+  for (let i = 3; i < img.data.length; i += 4) img.data[i] = img.data[i] > 100 ? 255 : 0;
+  ctx.putImageData(img, 0, 0);
+  const left = Math.round(opts.align === 'center' ? x - w / 2 : x);
+  p.ctx.drawImage(canvas, left, Math.round(y));
+  return w;
+}
+
 export function canvasTexture(canvas: HTMLCanvasElement): Texture {
   return new Texture({ source: new CanvasSource({ resource: canvas }) });
 }

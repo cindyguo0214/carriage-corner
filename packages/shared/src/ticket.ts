@@ -1,7 +1,7 @@
 // 北城捷運車票明信片（docs/PRD.md §8.1–8.5）
 // 公開分享連結只帶這些欄位：全是代碼與數字，不含任何使用者輸入的文字，因此不需內容審核也不需資料庫。
 import { LINES } from './lines';
-import type { LineId, Mode, PassCardId, SeatId } from './protocol';
+import type { LineId, Mode, PassCardId, SpotId } from './protocol';
 import { QUOTES } from './quotes';
 
 export interface TicketStats {
@@ -9,12 +9,12 @@ export interface TicketStats {
   /** 上車站／目前到達站的站碼 */
   from: string;
   to: string;
-  seat: SeatId;
+  /** 座位，或 S1..S6 站位 */
+  seat: SpotId;
   /** 上車時間（epoch ms） */
   boardedAt: number;
   minutes: number;
   pomodoros: number;
-  coffee: number;
   cheers: number;
   /** 同車過的真人乘客數（不含 NPC 與自己） */
   coRiders: number;
@@ -22,7 +22,7 @@ export interface TicketStats {
   quote: number;
   mode: Mode;
   card: PassCardId;
-  /** 車廂編號，例如 CX-0042 */
+  /** 列車編號，例如 CX-0042 */
   room: string;
 }
 
@@ -66,5 +66,5 @@ export function companionLine(coRiders: number) {
 /** 分享文案模板（docs/PRD.md §8.5） */
 export function shareText(t: TicketStats, url: string) {
   const line = LINES[t.line];
-  return `我在《車廂角落》${line.zh} ${t.seat} 安靜地坐了 ${t.minutes} 分鐘 ☕×${t.coffee}\n「${quoteOf(t)}」\n你也上車吧 → ${url} #車廂角落`;
+  return `我在《車廂角落》${line.zh} ${t.seat} 安靜地坐了 ${t.minutes} 分鐘\n「${quoteOf(t)}」\n你也上車吧 → ${url} #車廂角落`;
 }

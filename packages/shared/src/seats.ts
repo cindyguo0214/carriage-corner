@@ -1,4 +1,4 @@
-import { PRIORITY_SEATS, SEATS, type SeatId } from './protocol';
+import { PRIORITY_SEATS, SEATS, type SeatId, type SpotId } from './protocol';
 
 /** 理想密度：一般座 8 個 */
 export const SOFT_CAP = 8;
@@ -6,10 +6,12 @@ export const SOFT_CAP = 8;
 export const HARD_CAP = 12;
 
 const seatDistance = (a: SeatId, b: SeatId) => (a[1] !== b[1] ? 3 : Math.abs(Number(a[0]) - Number(b[0])));
+const isSeat = (s: SpotId): s is SeatId => s[0] !== 'S';
 
 /** 台北式就座：先避開博愛座，再盡量和別人隔一個位子；對面長椅不算「坐旁邊」（docs/PRD.md §7.4） */
-export function pickSeat(taken: Iterable<SeatId>, random: () => number = Math.random): SeatId | null {
-  const occupied = new Set(taken);
+export function pickSeat(taken: Iterable<SpotId>, random: () => number = Math.random): SeatId | null {
+  // 站著的人不影響選座位
+  const occupied = new Set([...taken].filter(isSeat));
   const free = SEATS.filter(s => !occupied.has(s));
   if (free.length === 0) return null;
   const regular = free.filter(s => !PRIORITY_SEATS.has(s));
