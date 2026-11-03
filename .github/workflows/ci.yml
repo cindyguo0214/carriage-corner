@@ -1,0 +1,48 @@
+# 每個 PR 與推到 main 時：型別檢查、伺服器整合測試、網頁版與 Artifact 版建置
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# 同一個分支有新的推送時，取消還在跑的舊工作
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # README 要求 Node 22 以上；同時測最新的 LTS
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: 安裝相依套件
+        run: npm ci
+
+      - name: 型別檢查
+        run: npm run typecheck
+
+      - name: 測試（啟動真正的即時伺服器）
+        run: npm test
+
+      - name: 建置網頁版
+        run: npm run build
+
+      - name: 建置 Artifact 版
+        run: npm run build:artifact
