@@ -50,9 +50,69 @@
       .name { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: #fffaf1; border: 2px solid #cfc6b8; border-radius: 4px; padding: 9px 10px; }
       .name:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; border-color: var(--ink); }
       .name-error { min-height: 1.2em; margin: 4px 0 0; font-size: 12px; color: var(--rose); }
+
+      .step-badge { margin-left: auto; font-size: 12px; letter-spacing: .1em; color: #8b857d; }
+      .step-head { display: flex; align-items: center; gap: 10px; margin: 14px 0 2px; }
+      .step-title { margin: 0; font-size: 20px; letter-spacing: .2em; }
+      .back { appearance: none; border: 2px solid #cfc6b8; background: #f1ece3; color: var(--ink); border-radius: 4px; width: 36px; height: 36px; font-size: 18px; cursor: pointer; }
+      .back:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
+      /* 進站路線圖：一條直的路線色帶，車站是可以點的站點 */
+      .route { position: relative; list-style: none; margin: 0; padding: 4px 0 4px 0; max-height: min(46vh, 360px); overflow-y: auto; }
+      .route::before { content: ''; position: absolute; left: 21px; top: 18px; bottom: 18px; width: 6px; background: var(--route, #7c93a8); border-radius: 3px; }
+      .stop { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; appearance: none; border: 2px solid transparent; background: none;
+        color: var(--ink); font: inherit; text-align: left; padding: 6px 8px 6px 12px; border-radius: 6px; cursor: pointer; }
+      .stop:hover { background: #f1ece3; }
+      .stop[aria-pressed="true"] { background: #fffaf1; border-color: var(--ink); }
+      .stop:focus-visible { outline: 3px solid var(--rose); outline-offset: 1px; }
+      .stop__dot { flex: none; width: 18px; height: 18px; border-radius: 50%; background: #fffaf1; border: 4px solid var(--route, #7c93a8); position: relative; z-index: 1; }
+      .stop[aria-pressed="true"] .stop__dot { background: var(--route, #7c93a8); box-shadow: 0 0 0 3px #fffaf1, 0 0 0 5px var(--ink); }
+      .stop__name { display: flex; flex-direction: column; line-height: 1.25; }
+      .stop__zh { font-size: 15px; font-weight: 600; }
+      .stop__en { font-size: 11px; color: #8b857d; }
+      .stop__meta { margin-left: auto; display: flex; gap: 4px; align-items: center; font-size: 11px; color: #6b6660; white-space: nowrap; }
+      .stop__xfer { padding: 1px 5px; border-radius: 3px; color: #fff; font-size: 10px; }
+      /* 過場載入畫面：純 CSS 像素動畫，網頁一打開、JS 還沒載入前就看得到 */
+      .loading { position: fixed; inset: 0; z-index: 30; display: grid; place-content: center; justify-items: center; gap: 14px;
+        padding: 16px; background: #26242e; color: var(--oat); opacity: 0; visibility: hidden; transition: opacity .35s, visibility .35s; }
+      .loading--on { opacity: 1; visibility: visible; }
+      .loading__scene { position: relative; width: 256px; height: 88px; overflow: hidden; background: #2a2930;
+        box-shadow: 0 0 0 4px #1e1d22; image-rendering: pixelated; }
+      .loading__lights { position: absolute; left: 0; right: 0; top: 12px; height: 4px;
+        background: repeating-linear-gradient(90deg, #f1e3cf 0 12px, transparent 12px 64px);
+        animation: loading-lights .5s steps(4) infinite; }
+      .loading__wall { position: absolute; left: 0; right: 0; top: 24px; height: 40px;
+        background: repeating-linear-gradient(90deg, #333139 0 4px, #2a2930 4px 32px); animation: loading-lights 1s steps(8) infinite; }
+      .loading__rail { position: absolute; left: 0; right: 0; bottom: 8px; height: 4px; background: #7d7b80;
+        box-shadow: 0 6px 0 #4b4a50; }
+      .loading__train { position: absolute; bottom: 16px; left: 0; width: 184px; height: 44px; background: var(--train, #7c93a8);
+        animation: loading-train 1.8s steps(36) infinite; }
+      .loading__train::before { content: ''; position: absolute; left: 12px; right: 20px; top: 8px; height: 16px;
+        background: repeating-linear-gradient(90deg, #f1e3cf 0 20px, var(--train, #7c93a8) 20px 28px); }
+      .loading__train::after { content: ''; position: absolute; left: 0; right: 0; bottom: 8px; height: 4px; background: #e8e1d5; }
+      .loading__nose { position: absolute; right: -8px; top: 4px; width: 8px; height: 36px; background: var(--train, #7c93a8); }
+      .loading__title { margin: 4px 0 0; font-size: 16px; letter-spacing: .2em; }
+      .loading__dots::after { content: ''; animation: loading-dots 1.2s steps(4) infinite; }
+      .loading__tip { margin: 0; max-width: 300px; min-height: 2.8em; text-align: center; font-size: 12px; line-height: 1.6; color: #a39c93; }
+      @keyframes loading-lights { to { background-position-x: -64px; } }
+      @keyframes loading-train { from { transform: translateX(-200px); } to { transform: translateX(272px); } }
+      @keyframes loading-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+      @media (prefers-reduced-motion: reduce) {
+        .loading__lights, .loading__wall, .loading__train, .loading__dots::after { animation: none; }
+        .loading__train { transform: translateX(36px); }
+      }
     </style>
   </head>
   <body>
+    <div class="loading loading--on" id="loading" role="status" aria-live="polite">
+      <div class="loading__scene" aria-hidden="true">
+        <div class="loading__lights"></div>
+        <div class="loading__wall"></div>
+        <div class="loading__train"><span class="loading__nose"></span></div>
+        <div class="loading__rail"></div>
+      </div>
+      <p class="loading__title"><span id="loading-title">列車準備中</span><span class="loading__dots"></span></p>
+      <p class="loading__tip" id="loading-tip">TPRT 提示：車廂內禁止飲食，口渴的話到月台再喝吧。</p>
+    </div>
     <div id="stage"></div>
     <div id="hud"></div>
 
@@ -70,45 +130,64 @@
             <rect x="4" y="10" width="1" height="1" fill="#4a4744" /><rect x="11" y="10" width="1" height="1" fill="#4a4744" />
           </svg>
           北城捷運 TPRT
-        </div>
-        <h1 id="gate-title">車廂角落</h1>
-        <p class="sub">CARRIAGE CORNER</p>
-
-        <p class="q"><label for="name">你的名字（會顯示在頭上）</label></p>
-        <input class="name" id="name" type="text" maxlength="16" placeholder="例如：小安" autocomplete="nickname" enterkeyhint="go" />
-        <p class="name-error" id="name-error" role="alert"></p>
-
-        <p class="q" id="q-gender">性別</p>
-        <div class="opts" role="group" aria-labelledby="q-gender" data-group="gender">
-          <button class="opt" data-value="m" aria-pressed="true">👦 男生</button>
-          <button class="opt" data-value="f" aria-pressed="false">👧 女生</button>
+          <span class="step-badge" id="step-badge">1 / 2</span>
         </div>
 
-        <p class="q" id="q-line">今天想搭哪條線？</p>
-        <div class="opts" role="group" aria-labelledby="q-line" data-group="line">
-          <button class="opt" data-value="CX" aria-pressed="true"><span class="dot" style="background:var(--core)"></span>CX 城心線</button>
-          <button class="opt" data-value="RV" aria-pressed="false"><span class="dot" style="background:var(--rose)"></span>RV 河岸線</button>
-          <button class="opt" data-value="SK" aria-pressed="false"><span class="dot" style="background:var(--khaki)"></span>SK 雲橋線</button>
+        <!-- 第 1 步：乘客資料 -->
+        <div class="step" id="step-1">
+          <h1 id="gate-title">車廂角落</h1>
+          <p class="sub">CARRIAGE CORNER</p>
+
+          <p class="q"><label for="name">你的名字（會顯示在頭上）</label></p>
+          <input class="name" id="name" type="text" maxlength="16" placeholder="例如：小安" autocomplete="nickname" enterkeyhint="next" />
+          <p class="name-error" id="name-error" role="alert"></p>
+
+          <p class="q" id="q-gender">性別</p>
+          <div class="opts" role="group" aria-labelledby="q-gender" data-group="gender">
+            <button class="opt" data-value="m" aria-pressed="true">👦 男生</button>
+            <button class="opt" data-value="f" aria-pressed="false">👧 女生</button>
+          </div>
+
+          <p class="q" id="q-avatar">今天穿什麼出門？</p>
+          <div class="opts" role="group" aria-labelledby="q-avatar" data-group="avatar">
+            <button class="opt" data-value="office" aria-pressed="true">👔 上班族</button>
+            <button class="opt" data-value="student" aria-pressed="false">🎒 學生</button>
+            <button class="opt" data-value="hoodie" aria-pressed="false">🧥 連帽外套</button>
+            <button class="opt" data-value="headphone" aria-pressed="false">🎧 耳機族</button>
+          </div>
+
+          <p class="q" id="q-card">選一張隨行卡 PassCard</p>
+          <div class="opts" role="group" aria-labelledby="q-card" data-group="passCard">
+            <button class="opt" data-value="tile" aria-pressed="true">▦ 四色花磚</button>
+            <button class="opt" data-value="boba" aria-pressed="false">🧋 像素珍奶</button>
+            <button class="opt" data-value="ricecooker" aria-pressed="false">🍚 像素電鍋</button>
+            <button class="opt" data-value="mangoice" aria-pressed="false">🥭 芒果冰</button>
+          </div>
+
+          <button class="board" id="next" type="button">下一步：選路線與車站 →</button>
+          <p class="fine">不需註冊・名字隨你取・沒有聊天室</p>
         </div>
 
-        <p class="q" id="q-avatar">今天穿什麼出門？</p>
-        <div class="opts" role="group" aria-labelledby="q-avatar" data-group="avatar">
-          <button class="opt" data-value="office" aria-pressed="true">👔 上班族</button>
-          <button class="opt" data-value="student" aria-pressed="false">🎒 學生</button>
-          <button class="opt" data-value="hoodie" aria-pressed="false">🧥 連帽外套</button>
-          <button class="opt" data-value="headphone" aria-pressed="false">🎧 耳機族</button>
+        <!-- 第 2 步：路線與進站車站 -->
+        <div class="step" id="step-2" hidden>
+          <div class="step-head">
+            <button class="back" id="back" type="button" aria-label="回上一步">←</button>
+            <h2 class="step-title">路線與進站車站</h2>
+          </div>
+
+          <p class="q" id="q-line">搭哪條線？</p>
+          <div class="opts" role="group" aria-labelledby="q-line" data-group="line">
+            <button class="opt" data-value="CX" aria-pressed="true"><span class="dot" style="background:var(--core)"></span>CX 城心線</button>
+            <button class="opt" data-value="RV" aria-pressed="false"><span class="dot" style="background:var(--rose)"></span>RV 河岸線</button>
+            <button class="opt" data-value="SK" aria-pressed="false"><span class="dot" style="background:var(--khaki)"></span>SK 雲橋線</button>
+          </div>
+
+          <p class="q" id="q-station">從哪一站進站？</p>
+          <ol class="route" id="route" aria-labelledby="q-station"></ol>
+
+          <button class="board" id="board" type="button" disabled>先點一個車站</button>
         </div>
 
-        <p class="q" id="q-card">選一張隨行卡 PassCard</p>
-        <div class="opts" role="group" aria-labelledby="q-card" data-group="passCard">
-          <button class="opt" data-value="tile" aria-pressed="true">▦ 四色花磚</button>
-          <button class="opt" data-value="boba" aria-pressed="false">🧋 像素珍奶</button>
-          <button class="opt" data-value="ricecooker" aria-pressed="false">🍚 像素電鍋</button>
-          <button class="opt" data-value="mangoice" aria-pressed="false">🥭 芒果冰</button>
-        </div>
-
-        <button class="board" id="board" type="button">嗶！感應隨行卡進站</button>
-        <p class="fine">不需註冊・名字隨你取・沒有聊天室</p>
         <p class="legal">本作為獨立原創作品，路線、站名、標誌與票證皆為虛構，與任何真實營運單位無關。</p>
       </section>
     </main>

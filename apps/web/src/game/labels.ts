@@ -27,11 +27,18 @@ export class NameLabels {
       }
       if (node.el.textContent !== l.name) node.el.textContent = l.name;
       node.el.classList.toggle('name-label--self', l.self);
+      node.el.classList.toggle('gangway-sign', !!l.sign);
+      if (l.sign) {
+        node.el.onclick = l.sign.action;
+        node.el.style.setProperty('--nudge', l.sign.align === 'left' ? '-4px' : '4px');
+      }
+      // 名字：錨點在頭頂正中；指示牌：錨點在通道門內側邊緣
+      const anchor = !l.sign ? 'translate(-50%, -100%)' : l.sign.align === 'left' ? 'translate(0, -50%)' : 'translate(-100%, -50%)';
       const opacity = Math.round(l.alpha * 4) / 4;
-      const key = `${Math.round(l.sx)},${Math.round(l.sy)},${opacity}`;
+      const key = `${Math.round(l.sx)},${Math.round(l.sy)},${opacity},${anchor}`;
       if (key !== node.key) {
         node.key = key;
-        node.el.style.transform = `translate(${Math.round(l.sx)}px, ${Math.round(l.sy)}px) translate(-50%, -100%)`;
+        node.el.style.transform = `translate(${Math.round(l.sx)}px, ${Math.round(l.sy)}px) ${anchor}`;
         node.el.style.opacity = String(opacity);
       }
     }

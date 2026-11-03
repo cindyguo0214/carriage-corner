@@ -43,6 +43,8 @@ export class Scenery {
     this.midKind = midKindFor(train.landmarks);
     this.applyNearMid();
     this.rain.removeParticles();
+    // ParticleContainer 會記住第一次用的貼圖；晨／夜換美術時舊貼圖會被釋放，必須指向新的
+    this.rain.texture = art.rain[0];
     this.drops = Array.from({ length: RAIN_COUNT }, () =>
       new Particle({ texture: art.rain[0], x: Math.random() * W, y: Math.random() * SCENE_H }),
     );

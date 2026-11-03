@@ -86,15 +86,11 @@ function drawBack(p: Painter, pal: Palette, seatColor: 'blue' | 'yellow') {
     p.rect(d.x, FLOOR_Y + 3, d.w, 2, pal.warning);
   }
 
-  // 車廂兩端的貫通道：門框＋通往隔壁車廂的暗處，中間一個小箭頭
-  for (const [x, dir] of [[0, -1], [W - GANGWAY_W, 1]] as const) {
+  // 車廂兩端的貫通道：門框＋通往隔壁車廂的暗處（箭頭由車廂場景畫，會動）
+  for (const x of [0, W - GANGWAY_W]) {
     p.rect(x, 40, GANGWAY_W, FLOOR_Y - 40, pal.metalLo);
     p.rect(x + 2, 44, GANGWAY_W - 4, FLOOR_Y - 44, pal.led);
     p.rect(x + 3, 46, GANGWAY_W - 6, FLOOR_Y - 48, pal.wallShade);
-    const ax = x + GANGWAY_W / 2;
-    for (let i = 0; i < 3; i++) {
-      p.rect(ax - dir * i - (dir === 1 ? 1 : 0), 100 - i, 1, 1 + i * 2, pal.ledOn);
-    }
   }
 
   // 地板

@@ -2,7 +2,7 @@
 import { CanvasSource, Sprite, Texture } from 'pixi.js';
 import { NOTE_MAX_GRAPHEMES, splitGraphemes } from '@cc/shared';
 import { WIN, windowRect } from './layout';
-import { makeCanvas, rng } from './paint';
+import { mix, makeCanvas, rng } from './paint';
 import { shade, type Palette } from './palette';
 
 const GW = WIN.w;
@@ -10,7 +10,11 @@ const GH = WIN.h;
 const FOG_TILE = GW * 2;
 /** 留言寫下後保持清晰的秒數 */
 const CLEAR_SEC = 20;
-const NOTE_FONT = '11px "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+// 粗一點、大一點，字與字之間留 1 px：二值化後筆劃不會黏在一起
+const NOTE_FONT = '700 13px "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+const NOTE_PX = 13;
+const LETTER_SPACING = 1;
+const LINE_H = 16;
 const CHARS_PER_LINE = 4;
 
 interface Droplet { x: number; y: number; mass: number; sliding: boolean; vy: number; wobble: number }
@@ -20,8 +24,8 @@ interface Note {
   ttlMs: number;
   /** 每個字形像素的消散門檻（0..1），霧氣依此有機地重新凝結 */
   pixels: { i: number; n: number }[];
-  /** 筆劃外緣聚集的小水珠：比霧深一階，讓字在明亮的晨間也讀得出來 */
-  rim: { i: number; n: number }[];
+  /** 筆劃外緣：緊貼的一圈深色水痕（亮背景時看得清），再外一圈亮白霧氣（暗背景時看得清） */
+  rim: { i: number; n: number; dark: boolean }[];
   bucket: number;
 }
 
@@ -33,7 +37,8 @@ export class WindowGlass {
   private trails = makeCanvas(GW, GH);
   private mask = makeCanvas(GW, GH);
   private rim = makeCanvas(GW, GH);
-  private rimRgb: [number, number, number] = [0, 0, 0];
+  private rimDark: [number, number, number] = [0, 0, 0];
+  private rimLight: [number, number, number] = [255, 255, 255];
   private drops: Droplet[] = [];
   private note: Note | null = null;
   private fogOffset = 0;
@@ -53,8 +58,12 @@ export class WindowGlass {
     this.fog = buildFogTile(pal.fog, 100 + this.index);
     this.dropColor = pal.glow;
     this.fogAlpha = night ? 0.55 : 0.42;
-    const rim = parseInt(shade(pal.fog, night ? 0.35 : 0.55).slice(1), 16);
-    this.rimRgb = [rim >> 16, (rim >> 8) & 255, rim & 255];
+    const rgb = (hex: string): [number, number, number] => {
+      const n = parseInt(hex.slice(1), 16);
+      return [n >> 16, (n >> 8) & 255, n & 255];
+    };
+    this.rimDark = rgb(shade(pal.fog, night ? 0.22 : 0.38));
+    this.rimLight = rgb(mix(pal.fog, '#ffffff', 0.6));
     if (this.note) this.note.bucket = -1;
   }
 
@@ -78,31 +87,49 @@ export class WindowGlass {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
-    const lineH = 13;
-    const top = GH / 2 - ((lines.length - 1) * lineH) / 2;
-    lines.forEach((line, i) => ctx.fillText(line, GW / 2, top + i * lineH));
+    const top = GH / 2 - ((lines.length - 1) * LINE_H) / 2;
+    lines.forEach((line, row) => {
+      // 逐字排版，才能控制字距
+      const glyphs = splitGraphemes(line);
+      const widths = glyphs.map(g => Math.max(ctx.measureText(g).width, NOTE_PX * 0.55));
+      const total = widths.reduce((a, b) => a + b, 0) + LETTER_SPACING * (glyphs.length - 1);
+      let x = (GW - total) / 2;
+      glyphs.forEach((g, k) => {
+        ctx.fillText(g, Math.round(x + widths[k] / 2), Math.round(top + row * LINE_H));
+        x += widths[k] + LETTER_SPACING;
+      });
+    });
     const data = ctx.getImageData(0, 0, GW, GH).data;
     const noise = rng(now % 100000);
     const pixels: Note['pixels'] = [];
     const stroke = new Set<number>();
     for (let i = 0; i < GW * GH; i++) {
-      if (data[i * 4 + 3] > 90) {
+      if (data[i * 4 + 3] > 110) {
         pixels.push({ i, n: noise() });
         stroke.add(i);
       }
     }
+    // 第一圈（八方向＋右下陰影）是深色描邊，第二圈是亮白霧氣
     const rim: Note['rim'] = [];
-    const seen = new Set<number>();
-    for (const i of stroke) {
-      const x = i % GW, y = Math.floor(i / GW);
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        const j = ny * GW + nx;
-        if (nx < 0 || ny < 0 || nx >= GW || ny >= GH || stroke.has(j) || seen.has(j)) continue;
-        seen.add(j);
-        rim.push({ i: j, n: noise() });
+    const seen = new Set<number>(stroke);
+    const ring = (from: Iterable<number>, dark: boolean, dirs: number[][]) => {
+      const out: number[] = [];
+      for (const i of from) {
+        const x = i % GW, y = Math.floor(i / GW);
+        for (const [dx, dy] of dirs) {
+          const nx = x + dx, ny = y + dy;
+          const j = ny * GW + nx;
+          if (nx < 0 || ny < 0 || nx >= GW || ny >= GH || seen.has(j)) continue;
+          seen.add(j);
+          out.push(j);
+          rim.push({ i: j, n: noise(), dark });
+        }
       }
-    }
+      return out;
+    };
+    const eight = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+    const inner = ring(stroke, true, [...eight, [2, 2]]);
+    ring(inner, false, [[1, 0], [-1, 0], [0, 1], [0, -1]]);
     this.note = { createdAt: now, ttlMs, pixels, rim, bucket: -1 };
   }
 
@@ -162,10 +189,9 @@ export class WindowGlass {
     ctx.putImageData(img, 0, 0);
 
     const rimImg = this.rim.ctx.createImageData(GW, GH);
-    const [r, g, b] = this.rimRgb;
-    for (const { i, n } of note.rim) {
+    for (const { i, n, dark } of note.rim) {
       if (n >= clarity * 1.08) continue;
-      rimImg.data.set([r, g, b, 110], i * 4);
+      rimImg.data.set(dark ? [...this.rimDark, 215] : [...this.rimLight, 190], i * 4);
     }
     this.rim.ctx.putImageData(rimImg, 0, 0);
   }

@@ -28,6 +28,8 @@ export type PlatformPhase = 'away' | 'arriving' | 'open' | 'closing' | 'leaving'
 
 export interface AppState {
   line: LineId;
+  /** 閘門選的進站車站（索引） */
+  station: number | null;
   /** 頭上的名字（連線時以伺服器過濾後的為準） */
   name: string;
   gender: Gender;
@@ -75,6 +77,7 @@ const initialMode = (params.get('mode') as Mode | null) ?? modeForHour(new Date(
 
 export const store = createStore<AppState>(() => ({
   line: 'CX',
+  station: null,
   name: '',
   gender: 'm',
   avatar: 'office',

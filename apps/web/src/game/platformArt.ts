@@ -46,7 +46,10 @@ export function buildPlatformArt(pal: Palette, night: boolean, line: LineDef, st
   const psdLeafH = underground ? PSD_BOTTOM - PSD_TOP - 16 : PSD_BOTTOM - GATE_TOP;
   return {
     ceiling: paint(W, CEIL_H, p => drawCeiling(p, pal, line, s.zh, s.code)),
-    back: paint(W, PSD_BOTTOM - CEIL_H, p => drawBack(p, pal, night, line, s.zh, s.en, underground)),
+    back: paint(W, PSD_BOTTOM - CEIL_H, p => {
+      drawBack(p, pal, night, line, s.zh, s.en, underground);
+      drawRouteMap(p, pal, line, station, underground ? 114 : 92);
+    }),
     car: paint(CAR_W, TRAIN_H, p => drawCar(p, pal, night, line)),
     carLeaves: [0, 1].map(side => paint(leafW, TRAIN_DOOR_H, p => drawCarLeaf(p, pal, night, side === 1))) as [Texture, Texture],
     psd: paint(W, PSD_BOTTOM - CEIL_H, p => drawPsd(p, pal, line, underground)),
@@ -119,6 +122,34 @@ function drawBack(p: Painter, pal: Palette, night: boolean, line: LineDef, zh: s
   p.rect(0, h - 14, W, 2, pal.metal);
   p.rect(0, h - 6, W, 2, pal.metal);
   for (let tx = 0; tx < W; tx += 12) p.rect(tx, h - 12, 6, 6, pal.tunnel);
+}
+
+/** 對向牆上的路線圖：整條線的車站，目前這站放大並標「本站」 */
+function drawRouteMap(p: Painter, pal: Palette, line: LineDef, here: number, y0: number) {
+  const x0 = 176;
+  const w = 288;
+  const h = 36;
+  p.round(x0 - 2, y0 - 2, w + 4, h + 4, pal.metalLo);
+  p.round(x0, y0, w, h, pal.paper);
+  const n = line.stations.length;
+  const left = x0 + 22;
+  const span = w - 44;
+  const ly = y0 + 11;
+  p.rect(left, ly - 1, span, 3, line.color);
+  line.stations.forEach((st, i) => {
+    const x = Math.round(left + (i / (n - 1)) * span);
+    if (i === here) {
+      p.rect(x - 4, ly - 4, 9, 9, pal.eye);
+      p.rect(x - 3, ly - 3, 7, 7, '#FFFFFF');
+      p.rect(x - 1, ly - 1, 3, 3, line.color);
+      // 「本站」小旗
+      p.rect(x - 1, y0 + 1, 3, 2, pal.warning);
+    } else {
+      p.rect(x - 2, ly - 2, 5, 5, '#FFFFFF');
+      p.rect(x - 1, ly - 1, 3, 3, line.color);
+    }
+    pixelText(p, st.zh, x, y0 + 18, 9, i === here ? pal.eye : mix(pal.eye, pal.paper, 0.4), { align: 'center', bold: i === here });
+  });
 }
 
 function drawCar(p: Painter, pal: Palette, night: boolean, line: LineDef) {

@@ -26,6 +26,10 @@ export class Stage {
   private fade = new Sprite();
   private fadeT = 0;
   private fadeSec = 1.2;
+  /** 換車廂的滑動：舊畫面往反方向滑出、新車廂從前進方向滑入 */
+  private slideDir: -1 | 0 | 1 = 0;
+  private slideT = 0;
+  private baseX = 0;
   private labels!: NameLabels;
   private labelBuf: Label[] = [];
   private portrait = false;
@@ -88,9 +92,16 @@ export class Stage {
     this.layout();
   }
 
-  /** 同一場景內的大變動（例如換車廂）也淡化一下 */
+  /** 同一場景內的大變動也淡化一下 */
   crossfade(sec = 0.9) {
     this.snapshotForFade(sec);
+  }
+
+  /** 穿過貫通道：dir=1 往後一節（畫面往左滑），-1 往前一節 */
+  slide(dir: -1 | 1) {
+    this.snapshotForFade(1);
+    this.slideDir = dir;
+    this.slideT = 0;
   }
 
   set maxFPS(fps: number) {
@@ -145,6 +156,7 @@ export class Stage {
       Math.round((cssW * dpr - bw * scale) / 2) / dpr,
       Math.round((cssH * dpr - bh * scale) / 2) / dpr,
     );
+    this.baseX = this.display.x;
     this.fade.scale.copyFrom(this.display.scale);
     this.fade.position.copyFrom(this.display.position);
     this.lastFocus = NaN;
@@ -208,7 +220,21 @@ export class Stage {
       this.worldInScreen.x = -this.camX;
       this.app.renderer.render({ container: this.screen, target: this.screenRT, clear: true });
     }
-    if (this.fade.visible) {
+    if (this.slideDir !== 0) {
+      this.slideT = Math.min(1, this.slideT + dt / 0.6);
+      const k = this.slideT * this.slideT * (3 - 2 * this.slideT);
+      const width = (this.portrait ? this.screenW : W) * this.cssScale;
+      // 以實體像素對齊，滑動時也維持像素清晰
+      const snap = (v: number) => Math.round(v * this.app.renderer.resolution) / this.app.renderer.resolution;
+      this.fade.x = snap(this.baseX - this.slideDir * k * width);
+      this.display.x = snap(this.baseX + this.slideDir * (1 - k) * width);
+      if (this.slideT >= 1) {
+        this.slideDir = 0;
+        this.display.x = this.fade.x = this.baseX;
+        this.fade.visible = false;
+        this.fade.texture.destroy(true);
+      }
+    } else if (this.fade.visible) {
       this.fadeT -= dt / this.fadeSec;
       this.fade.alpha = Math.ceil(Math.max(0, this.fadeT) * 6) / 6;
       if (this.fadeT <= 0) {
@@ -221,8 +247,8 @@ export class Stage {
 
   private renderLabels(scene: Scene) {
     this.labelBuf.length = 0;
-    // 淡化期間舊畫面還蓋在上面，名字等新場景浮現後再出現
-    if (!this.fade.visible || this.fade.alpha < 0.5) scene.labels(this.labelBuf);
+    // 淡化或滑動期間舊畫面還蓋在上面，名字等新場景浮現後再出現
+    if (this.slideDir === 0 && (!this.fade.visible || this.fade.alpha < 0.5)) scene.labels(this.labelBuf);
     const fadeIn = this.fade.visible ? 1 - this.fade.alpha : 1;
     const out = this.labelBuf.map(l => {
       const bx = this.portrait ? l.x - this.camX : l.x;

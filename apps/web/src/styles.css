@@ -46,3 +46,34 @@
   color: var(--color-ink);
   font-weight: 600;
 }
+
+/* 通道門指示牌：「❮ 第 2 車廂」「第 4 車廂 ❯」，輕輕往門的方向推 */
+.gangway-sign {
+  pointer-events: auto;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: rgb(30 28 36 / 0.78);
+  color: var(--color-lamp);
+  box-shadow: 0 0 0 2px var(--color-lamp);
+  animation: gangway-nudge 1.2s steps(3) infinite;
+}
+
+.gangway-sign:hover {
+  background: var(--color-lamp);
+  color: var(--color-smoke);
+}
+
+@keyframes gangway-nudge {
+  50% {
+    margin-left: var(--nudge, 0px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gangway-sign {
+    animation: none;
+  }
+}

@@ -113,6 +113,45 @@ export class AmbientMixer {
     if (this.ctx) this.beep(1200, this.ctx.currentTime + 0.01, 0.09);
   }
 
+  /** 穿過車廂連接處：拉開通道門的「咔」、一陣風聲掃過、再「咔」一聲關上（全部即時合成） */
+  playGangway() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.02;
+    const len = 1.1;
+    const noise = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * len), ctx.sampleRate);
+    const data = noise.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = new AudioBufferSourceNode(ctx, { buffer: noise });
+    const band = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 300, Q: 0.8 });
+    const env = new GainNode(ctx, { gain: 0 });
+    src.connect(band).connect(env).connect(this.buses.sfx);
+    band.frequency.setValueAtTime(300, t);
+    band.frequency.exponentialRampToValueAtTime(1600, t + 0.45);
+    band.frequency.exponentialRampToValueAtTime(400, t + len);
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(1.6, t + 0.35);
+    env.gain.linearRampToValueAtTime(0, t + len);
+    src.start(t);
+    src.stop(t + len);
+    src.onended = () => env.disconnect();
+    // 門閂的低沉「咔」聲
+    for (const at of [t, t + len - 0.12]) {
+      const osc = new OscillatorNode(ctx, { type: 'sine', frequency: 140 });
+      const g = new GainNode(ctx, { gain: 0 });
+      osc.connect(g).connect(this.buses.sfx);
+      osc.frequency.setValueAtTime(140, at);
+      osc.frequency.exponentialRampToValueAtTime(60, at + 0.08);
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(1.2, at + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 0.1);
+      osc.start(at);
+      osc.stop(at + 0.12);
+      osc.onended = () => g.disconnect();
+    }
+    this.duck(len * 1000 + 300);
+  }
+
   playPomodoroBell() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + 0.02;

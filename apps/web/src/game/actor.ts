@@ -17,6 +17,8 @@ export interface Label {
   y: number;
   alpha: number;
   self: boolean;
+  /** 通道門的指示牌：靠左或靠右對齊、可以點 */
+  sign?: { align: 'left' | 'right'; action: () => void };
 }
 
 /** 走路速度（px/s） */

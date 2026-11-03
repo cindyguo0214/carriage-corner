@@ -9,9 +9,9 @@ import { actions, devParams, store, useApp, type PlatformPhase } from '../store'
 import { TicketModal } from './TicketModal';
 
 const STATES: { state: PaxState; icon: string; label: string }[] = [
-  { state: 'idle', icon: '🪟', label: '看窗外' },
-  { state: 'music', icon: '🎧', label: '戴耳機' },
-  { state: 'read', icon: '📖', label: '閱讀・番茄鐘' },
+  { state: 'idle', icon: '👀', label: '看窗外' },
+  { state: 'music', icon: '🎧', label: '聽音樂' },
+  { state: 'read', icon: '📖', label: '專注模式' },
   { state: 'sleep', icon: '😴', label: '補眠' },
 ];
 
@@ -242,13 +242,34 @@ function BottomBar() {
   );
 }
 
+/** 底部按鈕：圖示＋看得到的中文標籤，不只靠圖示猜意思 */
+function BarButton({
+  icon, label, onClick, on = false, primary = false, title, expanded,
+}: {
+  icon: string; label: string; onClick: () => void; on?: boolean; primary?: boolean; title?: string; expanded?: boolean;
+}) {
+  const theme = useTheme();
+  return (
+    <button
+      aria-pressed={expanded === undefined && !primary ? on : undefined}
+      aria-expanded={expanded}
+      title={title ?? label}
+      className={`flex min-w-12 flex-col items-center gap-0.5 rounded px-2 py-1 transition-colors ${on || primary ? theme.chipOn : theme.chip}`}
+      onClick={onClick}
+    >
+      <span className="text-base leading-none" aria-hidden>{icon}</span>
+      <span className="whitespace-nowrap text-[11px] leading-none">{label}</span>
+    </button>
+  );
+}
+
 function PlatformBar() {
   const theme = useTheme();
   const hasRide = useApp(s => !!s.ride);
   return (
     <nav aria-label="月台" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
-      <span className="px-2 opacity-80">點長椅坐下・車門開了點車門上車</span>
-      <span className="mx-1 h-6 w-px bg-current opacity-20" aria-hidden />
+      <span className="px-2 text-xs opacity-80">點長椅坐下・車門開了點車門上車</span>
+      <span className="mx-1 h-8 w-px bg-current opacity-20" aria-hidden />
       <ExtraButtons ticket={hasRide} />
     </nav>
   );
@@ -261,59 +282,45 @@ function CarriageBar() {
   const dwell = useApp(s => s.train.phase === 'dwell');
   return (
     <nav aria-label="乘客動作" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
-      {!standing && STATES.map(s => (
-        <button
-          key={s.state}
-          aria-pressed={selfState === s.state}
-          aria-label={s.label}
-          title={s.label}
-          className={`rounded px-2.5 py-1.5 text-base transition-colors ${selfState === s.state ? theme.chipOn : theme.chip}`}
-          onClick={() => {
-            actions.setSelfState(s.state);
-            if (s.state === 'music') {
-              void mixer.setChannel('lofi', true);
-              actions.setUi({ mixerOpen: true });
-            }
-          }}
-        >
-          {s.icon}
-        </button>
-      ))}
-      {standing && <span className="px-2 opacity-80">拉著吊環・點空位坐下</span>}
-      <Pomodoro />
-      <span className="mx-1 h-6 w-px bg-current opacity-20" aria-hidden />
-      <button className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => actions.setUi({ composerOpen: true, glowMenu: null })}>
-        ✍ 寫在車窗
-      </button>
-      {dwell && (
-        <button className={`rounded px-2.5 py-1.5 ${theme.chipOn}`} onClick={() => bridge.game?.alight()}>
-          🚪 下車
-        </button>
-      )}
+      <BarButton icon="✍" label="車窗寫字" title="在身旁的車窗霧氣上寫一句話" onClick={() => actions.setUi({ composerOpen: true, glowMenu: null })} />
+      <span className="mx-0.5 h-8 w-px bg-current opacity-20" aria-hidden />
+      <div role="group" aria-label="角色狀態" className="flex items-center gap-1">
+        <span className="text-[10px] leading-tight opacity-60 [writing-mode:vertical-rl]" aria-hidden>角色狀態</span>
+        {standing ? (
+          <span className="px-2 text-xs opacity-80">拉著吊環・點空位坐下</span>
+        ) : (
+          STATES.map(s => (
+            <BarButton
+              key={s.state}
+              icon={s.icon}
+              label={s.label}
+              on={selfState === s.state}
+              onClick={() => {
+                actions.setSelfState(s.state);
+                if (s.state === 'music') {
+                  void mixer.setChannel('lofi', true);
+                  actions.setUi({ mixerOpen: true });
+                }
+              }}
+            />
+          ))
+        )}
+        <Pomodoro />
+      </div>
+      <span className="mx-0.5 h-8 w-px bg-current opacity-20" aria-hidden />
+      {dwell && <BarButton icon="🚪" label="下車" primary title="車門開著，現在可以下車" onClick={() => bridge.game?.alight()} />}
       <ExtraButtons ticket />
     </nav>
   );
 }
 
 function ExtraButtons({ ticket }: { ticket: boolean }) {
-  const theme = useTheme();
   const mixerOpen = useApp(s => s.ui.mixerOpen);
   return (
     <>
-      <button
-        aria-expanded={mixerOpen}
-        className={`rounded px-2.5 py-1.5 ${mixerOpen ? theme.chipOn : theme.chip}`}
-        onClick={() => actions.setUi({ mixerOpen: !mixerOpen })}
-      >
-        🎚 音效
-      </button>
+      <BarButton icon="🎚" label="音效" expanded={mixerOpen} on={mixerOpen} onClick={() => actions.setUi({ mixerOpen: !mixerOpen })} />
       {ticket && (
-        <button
-          className={`rounded px-2.5 py-1.5 ${theme.chip}`}
-          onClick={() => actions.setUi({ ticketOpen: true, mixerOpen: false, glowMenu: null, noteMenu: null })}
-        >
-          🎫 車票
-        </button>
+        <BarButton icon="🎫" label="車票" onClick={() => actions.setUi({ ticketOpen: true, mixerOpen: false, glowMenu: null, noteMenu: null })} />
       )}
     </>
   );

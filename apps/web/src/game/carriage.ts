@@ -56,6 +56,7 @@ export class CarriageScene implements Scene {
   private led = new Graphics();
   /** 站著的人握著的吊環 */
   private handStraps = new Graphics();
+  private gangwayFx = new Graphics();
   private straps: Sprite[];
   private strapArt: Texture[] = [];
   private particles = new Particles();
@@ -120,7 +121,7 @@ export class CarriageScene implements Scene {
     );
     this.interiorFront.y = B_PANEL_Y;
     this.world.addChild(
-      this.scenery.view, this.doorway, leafLayer, glassLayer, this.interiorBack, this.led, strapLayer,
+      this.scenery.view, this.doorway, leafLayer, glassLayer, this.interiorBack, this.led, this.gangwayFx, strapLayer,
       this.passengers.backRow, this.handStraps, this.passengers.standRow, this.passengers.frontRow, this.interiorFront, this.lighting.view, this.particles.view,
     );
 
@@ -421,6 +422,36 @@ export class CarriageScene implements Scene {
 
   labels(out: Label[]) {
     this.passengers.labels(out);
+    // 通道門指示牌：沒有下一節的那一側不顯示
+    const y = 104;
+    if (this.car > 1) {
+      out.push({ id: 'gw-left', name: `❮ 第 ${this.car - 1} 車廂`, x: GANGWAY_W + 3, y, alpha: 1, self: false, sign: { align: 'left', action: () => this.hooks.moveCar(-1) } });
+    }
+    if (this.car < CARS) {
+      out.push({ id: 'gw-right', name: `第 ${this.car + 1} 車廂 ❯`, x: W - GANGWAY_W - 3, y, alpha: 1, self: false, sign: { align: 'right', action: () => this.hooks.moveCar(1) } });
+    }
+  }
+
+  /** 通道門上會動的像素箭頭：一閃一閃往門外推 */
+  private drawGangwayArrows() {
+    const pal = PALETTES[this.mode];
+    const g = this.gangwayFx;
+    g.clear();
+    const phase = Math.floor(this.time * 3) % 3;
+    for (const dir of [-1, 1] as const) {
+      if (this.car + dir < 1 || this.car + dir > CARS) continue;
+      const cx = dir === -1 ? GANGWAY_W / 2 : W - GANGWAY_W / 2;
+      for (let k = 0; k < 3; k++) {
+        const y = 70 + k * 30;
+        const x = cx + dir * (phase - 1);
+        const color = hexToNum(k === phase ? pal.ledOn : pal.light);
+        for (let i = 0; i < 4; i++) {
+          // 「❮」或「❯」：中間最尖
+          g.rect(Math.round(x - dir * i - (dir === 1 ? 1 : 0)), y - i, 2, 1).fill(color);
+          g.rect(Math.round(x - dir * i - (dir === 1 ? 1 : 0)), y + i, 2, 1).fill(color);
+        }
+      }
+    }
   }
 
   colors(mode: Mode) {
@@ -510,6 +541,7 @@ export class CarriageScene implements Scene {
     if (this.ledAcc >= 0.25) {
       this.ledAcc = 0;
       drawLed(this.led, train, this.mode, Math.floor(this.time * 2) % 2 === 0);
+      this.drawGangwayArrows();
     }
   }
 
