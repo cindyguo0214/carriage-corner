@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
-import { after, before, describe, it } from 'node:test';
+import { after, afterEach, before, describe, it } from 'node:test';
 import { io as connect, type Socket } from 'socket.io-client';
 import type { BoardedSnapshot, ClientToServer, LineId, ServerToClient } from '@cc/shared';
 import { createRealtimeServer, type RealtimeServer } from '../src/app';
@@ -30,8 +30,13 @@ before(async () => {
   url = `http://127.0.0.1:${(server.http.address() as AddressInfo).port}`;
 });
 
+// 每個測試從空的路網開始，避免前一個測試的乘客影響分流
+afterEach(() => {
+  clients.splice(0).forEach(c => c.disconnect());
+  server.rooms.disposeAll();
+});
+
 after(async () => {
-  clients.forEach(c => c.disconnect());
   await server.close();
 });
 
@@ -41,11 +46,14 @@ function open(): Client {
   return c;
 }
 
-async function board(line: LineId = 'CX', opts: { sid?: string; resumeToken?: string | null; client?: Client } = {}) {
+async function board(
+  line: LineId = 'CX',
+  opts: { sid?: string; resumeToken?: string | null; client?: Client; name?: string } = {},
+) {
   const client = opts.client ?? open();
   const sid = opts.sid ?? `test-sid-${++sidSeq}-xxxx`;
   const res = await client.timeout(2000).emitWithAck('board', {
-    sid, resumeToken: opts.resumeToken ?? null, line, avatar: 'office', passCard: 'tile',
+    sid, resumeToken: opts.resumeToken ?? null, line, name: opts.name ?? '小安', gender: 'f', avatar: 'office', passCard: 'tile',
   });
   assert.ok(res.ok, `board failed: ${JSON.stringify(res)}`);
   return { client, sid, snap: (res as { data: BoardedSnapshot }).data };
@@ -61,26 +69,32 @@ const once = <E extends keyof ServerToClient>(c: Client, event: E, ms = 2000) =>
   });
 
 describe('realtime server', () => {
-  it('同一條線的乘客坐進同一節車廂，後到的人從貫通道走進來', async () => {
+  it('同一條線的乘客坐進同一節車廂，後到的人從車門走進來，頭上帶著名字', async () => {
     const a = await board('SK');
     const joined = once(a.client, 'pax:join');
     const b = await board('SK');
     assert.equal(a.snap.room.id, b.snap.room.id);
     const join = await joined;
     assert.equal(join.pid, b.snap.you.pid);
-    assert.equal(join.via, 'gangway');
+    assert.equal(join.via, 'door');
+    assert.equal(join.name, '小安');
+    assert.equal(join.gender, 'f');
     assert.notEqual(a.snap.you.seat, b.snap.you.seat);
     assert.ok(b.snap.passengers.some(p => p.npc), '新車廂應有 NPC 補足熱度');
     assert.equal(new Set(b.snap.passengers.map(p => p.seat)).size, b.snap.passengers.length, '座位不可重複');
   });
 
-  it('第 9 位乘客仍分到同一節（未滿 12 人前不加開），不同路線分到不同車廂', async () => {
+  it('一節坐滿 8 人後，第 9 位走進同一列車的另一節；不同路線分到不同列車', async () => {
     const riders = [];
     for (let i = 0; i < 9; i++) riders.push(await board('RV'));
-    const roomIds = new Set(riders.map(r => r.snap.room.id));
-    assert.equal(roomIds.size, 1, '第 9 人仍應進同一節（8 人後改挑人最少的未滿車廂）');
+    const first8 = new Set(riders.slice(0, 8).map(r => r.snap.room.id));
+    assert.equal(first8.size, 1, '前 8 人應坐進同一節');
+    const ninth = riders[8].snap.room;
+    assert.ok(!first8.has(ninth.id), '第 9 人改坐別節，不擠博愛座');
+    assert.equal(ninth.train, riders[0].snap.room.train, '仍是同一列車');
+    assert.equal(ninth.cars, 4);
     const other = await board('CX');
-    assert.ok(!roomIds.has(other.snap.room.id));
+    assert.notEqual(other.snap.room.train, ninth.train);
   });
 
   it('微光廣播不帶送出者，送出者自己也不會收到', async () => {
@@ -89,7 +103,7 @@ describe('realtime server', () => {
     let senderGotGlow = false;
     a.client.on('glow', () => (senderGotGlow = true));
     const received = once(b.client, 'glow');
-    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'coffee' });
+    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'nod' });
     assert.deepEqual(res, { ok: true });
     const glow = await received;
     assert.deepEqual(Object.keys(glow).sort(), ['at', 'kind', 'to']);
@@ -97,7 +111,7 @@ describe('realtime server', () => {
     await new Promise(r => setTimeout(r, 100));
     assert.equal(senderGotGlow, false);
 
-    const again = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'cheer' });
+    const again = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'nod' });
     assert.deepEqual(again, { ok: false, code: 'RATE_LIMITED' }, '對同一人 2 分鐘內只能送一次');
   });
 
@@ -107,7 +121,7 @@ describe('realtime server', () => {
     await b.client.timeout(2000).emitWithAck('pref:set', { dnd: true });
     let got = false;
     b.client.on('glow', () => (got = true));
-    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'coffee' });
+    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'nod' });
     assert.deepEqual(res, { ok: true });
     await new Promise(r => setTimeout(r, 150));
     assert.equal(got, false);
@@ -174,6 +188,76 @@ describe('realtime server', () => {
     const depart = await once(b.client, 'train:depart', 3000);
     assert.equal(depart.train.from, ev.station);
     assert.ok(depart.train.arriveAt > depart.train.departAt);
+  });
+
+  it('名字也會過濾：聯絡方式改用替代名，過長的名字截斷', async () => {
+    const a = await board('CX', { name: '加我line: abc123' });
+    assert.equal(a.snap.you.name, '旅人');
+    const b = await board('CX', { name: '  一二三四五六七八九十  ' });
+    assert.equal(b.snap.you.name, '一二三四五六七八');
+  });
+
+  it('換座位：只能換到空位，也可以站著拉吊環，同車的人看到移動', async () => {
+    const a = await board('SK');
+    const b = await board('SK');
+    const free = (['1A', '2A', '3A', '4A', '5A', '6A', '1B', '2B', '3B', '4B', '5B', '6B'] as const)
+      .find(s => !b.snap.passengers.some(p => p.seat === s))!;
+    const moved = once(b.client, 'pax:move');
+    assert.deepEqual(await a.client.timeout(2000).emitWithAck('seat:move', { seat: free }), { ok: true });
+    assert.deepEqual(await moved, { pid: a.snap.you.pid, seat: free });
+    assert.deepEqual(
+      await a.client.timeout(2000).emitWithAck('seat:move', { seat: b.snap.you.seat }),
+      { ok: false, code: 'NO_TARGET' },
+    );
+    // 站到走道上拉吊環，寫字時用的是那一欄的車窗
+    assert.deepEqual(await a.client.timeout(2000).emitWithAck('seat:move', { seat: 'S4' }), { ok: true });
+    const seen = once(b.client, 'note:new');
+    assert.ok((await a.client.timeout(2000).emitWithAck('note:write', { text: '站著也很好' })).ok);
+    assert.equal((await seen).window, 3);
+  });
+
+  it('經貫通道換車廂：同一列車的相鄰車廂，原車廂的人看到離開', async () => {
+    const a = await board('RV');
+    const b = await board('RV');
+    assert.equal(a.snap.room.id, b.snap.room.id);
+    const left = once(b.client, 'pax:leave');
+    const dir = a.snap.room.car > 1 ? -1 : 1;
+    const res = await a.client.timeout(2000).emitWithAck('car:move', { dir });
+    assert.ok(res.ok);
+    const snap = (res as { data: BoardedSnapshot }).data;
+    assert.equal(snap.room.train, a.snap.room.train);
+    assert.equal(snap.room.car, a.snap.room.car + dir);
+    assert.equal(snap.you.pid, a.snap.you.pid);
+    assert.equal(snap.you.name, a.snap.you.name);
+    assert.deepEqual(await left, { pid: a.snap.you.pid, reason: 'transfer' });
+    const edge = snap.room.car === 1 ? -1 : snap.room.car === snap.room.cars ? 1 : null;
+    if (edge) {
+      assert.deepEqual(await a.client.timeout(2000).emitWithAck('car:move', { dir: edge }), { ok: false, code: 'NO_TARGET' });
+    }
+  });
+
+  it('下車：行駛中不能下車，到站開門後可以，同車的人看到離開', async () => {
+    const a = await board('SK');
+    const b = await board('SK');
+    const phase = await new Promise<'run' | 'dwell'>(resolve => {
+      const t = Date.now();
+      const s = a.snap.train;
+      resolve(t >= s.arriveAt && t < s.arriveAt + s.dwellMs ? 'dwell' : 'run');
+    });
+    if (phase === 'run') {
+      const early = await a.client.timeout(2000).emitWithAck('alight', {});
+      assert.deepEqual(early, { ok: false, code: 'NO_TARGET' });
+    }
+    await once(a.client, 'train:arrive', 3000);
+    assert.equal(a.snap.room.id, b.snap.room.id);
+    const left = once(b.client, 'pax:leave');
+    assert.deepEqual(await a.client.timeout(2000).emitWithAck('alight', {}), { ok: true });
+    assert.deepEqual(await left, { pid: a.snap.you.pid, reason: 'station' });
+    // 下車後回到月台，還能搭下一班車
+    const again = await a.client.timeout(2000).emitWithAck('board', {
+      sid: a.sid, resumeToken: null, line: 'SK', name: '小安', gender: 'f', avatar: 'office', passCard: 'tile',
+    });
+    assert.ok(again.ok);
   });
 
   it('拒絕格式錯誤的請求', async () => {

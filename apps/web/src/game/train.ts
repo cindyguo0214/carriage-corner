@@ -149,6 +149,22 @@ export class Train {
     this.setLeg({ from, to: from + 1, departAt, arriveAt: departAt + runMs, dwellMs }, now, false);
   }
 
+  /** 離線模式：剛停進 station 這一站（從月台上車時），停站結束後往 toward（終點站索引）開 */
+  startAtStation(station: number, toward: number, now: number, dwellMs: number, elapsedMs = 800) {
+    const n = this.line.stations.length;
+    const out = toward > station ? 1 : -1;
+    // 進站方向：一般站與出站同向；終點站是從另一邊開進來再折返
+    const dir = station === 0 || station === n - 1 ? -out : out;
+    const runMs = this.auto!.runSec * 1000;
+    const arriveAt = now - elapsedMs;
+    this.setLeg({ from: station - dir, to: station, departAt: arriveAt - runMs, arriveAt, dwellMs }, now, false);
+  }
+
+  /** 停站時剩下的開門毫秒數；行駛中為 0 */
+  dwellLeft(now: number) {
+    return this.phase === 'dwell' ? Math.max(0, this.leg.arriveAt + this.leg.dwellMs - now) : 0;
+  }
+
   private departLocally(now: number) {
     const n = this.line.stations.length;
     const from = this.to;

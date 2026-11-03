@@ -20,10 +20,10 @@ function normalize(text: string): string {
 /** 比對用：去掉空白與標點，擋「去 死」「去.死」這類拆字 */
 const squash = (text: string) => text.replace(/[\s\p{P}\p{S}]/gu, '');
 
-export function moderate(raw: string): Verdict {
+export function moderate(raw: string, maxGraphemes = NOTE_MAX_GRAPHEMES): Verdict {
   const text = normalize(raw);
   if (!text) return { ok: false, reason: 'empty' };
-  if (splitGraphemes(text).length > NOTE_MAX_GRAPHEMES) return { ok: false, reason: 'length' };
+  if (splitGraphemes(text).length > maxGraphemes) return { ok: false, reason: 'length' };
   const flat = squash(text);
   if (CARE.some(w => flat.includes(w))) return { ok: false, reason: 'care' };
   if (looksLikeContact(text)) return { ok: false, reason: 'contact' };

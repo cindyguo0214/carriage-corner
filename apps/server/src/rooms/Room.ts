@@ -1,11 +1,12 @@
-// 一節車廂＝一個房間：伺服器權威的座位、列車時鐘、NPC 與霧氣留言（docs/PRD.md §7.3–7.4）
+// 一節車廂＝一個房間：伺服器權威的座位、NPC 與霧氣留言（docs/PRD.md §7.3–7.4）；列車時鐘由 TrainRun 統一驅動
 import { randomUUID } from 'node:crypto';
 import {
-  LINES, pickSeat, segmentBetween,
-  type AvatarId, type BoardedSnapshot, type LineDef, type LineId, type Mode, type Passenger,
-  type PaxState, type SeatId, type ServerToClient, type TrainSnapshot, type WindowNote,
+  CARS, isStand, npcIdentity, PAX_STATES, pickSeat, spotColumn, STANDS,
+  type AvatarId, type BoardedSnapshot, type Gender, type Mode, type Passenger,
+  type PaxState, type SpotId, type ServerToClient, type WindowNote,
 } from '@cc/shared';
 import type { Config } from '../config';
+import type { TrainRun } from './TrainRun';
 
 export type Emit = <E extends keyof ServerToClient>(event: E, ...args: Parameters<ServerToClient[E]>) => void;
 
@@ -22,10 +23,8 @@ export interface NoteRec extends WindowNote {
   timer: ReturnType<typeof setTimeout>;
 }
 
-interface Leg { from: number; to: number; departAt: number; arriveAt: number }
+export interface Identity { name: string; gender: Gender; avatar: AvatarId }
 
-const AVATARS: AvatarId[] = ['office', 'student', 'hoodie', 'headphone'];
-const STATES: PaxState[] = ['idle', 'coffee', 'music', 'read', 'sleep'];
 const pick = <T,>(xs: readonly T[]) => xs[Math.floor(Math.random() * xs.length)];
 
 /** 依台北時間決定留言的晨／夜版本 */
@@ -35,38 +34,30 @@ export function taipeiMode(now = Date.now()): Mode {
 }
 
 export const publicPax = (p: ServerPax): Passenger => ({
-  pid: p.pid, seat: p.seat, avatar: p.avatar, state: p.state, since: p.since, ...(p.npc ? { npc: true as const } : {}),
+  pid: p.pid, seat: p.seat, name: p.name, gender: p.gender, avatar: p.avatar, state: p.state, since: p.since,
+  ...(p.npc ? { npc: true as const } : {}),
 });
 
 export class Room {
-  readonly line: LineDef;
   readonly pax = new Map<string, ServerPax>();
   private notes = new Map<string, NoteRec>();
-  private leg: Leg;
-  private legNo = 0;
-  private phase: 'run' | 'dwell' = 'run';
-  private timer: ReturnType<typeof setTimeout> | undefined;
   private fidget: ReturnType<typeof setInterval>;
-  private emptyStations = 0;
   disposed = false;
 
   constructor(
     readonly id: string,
-    lineId: LineId,
+    /** 第幾節（1..CARS） */
+    readonly car: number,
+    readonly run: TrainRun,
     private cfg: Config,
     private emit: Emit,
-    private onDispose: (room: Room) => void,
   ) {
-    this.line = LINES[lineId];
-    const n = this.line.stations.length;
-    const from = Math.floor(Math.random() * (n - 1));
-    const runMs = this.randomRunMs();
-    // 新車廂從行駛途中開始，玩家一上車就看到窗外在動
-    const departAt = Date.now() - runMs * 0.3;
-    this.leg = { from, to: from + 1, departAt, arriveAt: departAt + runMs };
-    this.scheduleArrival();
     this.balanceNpcs();
     this.fidget = setInterval(() => this.npcFidget(), 20_000);
+  }
+
+  get line() {
+    return this.run.line;
   }
 
   get realCount() {
@@ -75,54 +66,60 @@ export class Room {
     return n;
   }
 
-  get dwellMs() {
-    return this.cfg.dwellSec * 1000;
-  }
-
-  get train(): TrainSnapshot {
-    const { stations } = this.line;
-    const dir = this.leg.to > this.leg.from ? 1 : -1;
-    return {
-      dir: `toward:${stations[dir === 1 ? stations.length - 1 : 0].code}`,
-      from: stations[this.leg.from].code,
-      to: stations[this.leg.to].code,
-      departAt: this.leg.departAt,
-      arriveAt: this.leg.arriveAt,
-      dwellMs: this.dwellMs,
-      segment: segmentBetween(this.line, this.leg.from, this.leg.to),
-    };
-  }
-
   snapshotFor(pax: ServerPax, resumeToken: string): BoardedSnapshot {
     return {
       serverTime: Date.now(),
       resumeToken,
-      room: { id: this.id, line: this.line.id, capacity: 12 },
-      you: { pid: pax.pid, seat: pax.seat, codename: `Seat ${pax.seat}` },
-      train: this.train,
+      room: { id: this.id, train: this.run.id, line: this.line.id, capacity: 12, car: this.car, cars: CARS },
+      you: { pid: pax.pid, seat: pax.seat, name: pax.name },
+      train: this.run.train,
       passengers: [...this.pax.values()].map(publicPax),
       notes: [...this.notes.values()].map(({ authorSid: _a, timer: _t, ...note }) => note),
     };
   }
 
-  /** 真人就座；若 12 個位子都滿了，先請一位 NPC 走到隔壁車廂 */
-  seatHuman(sid: string, avatar: AvatarId): ServerPax {
-    let seat = pickSeat(this.takenSeats());
+  /** 真人就座；若 12 個位子都滿了，先請一位 NPC 走到隔壁車廂。帶入 moving 時是從別節車廂走過來的同一位乘客 */
+  seatHuman(sid: string, who: Identity, moving?: ServerPax): ServerPax {
+    let seat: SpotId | null = pickSeat(this.takenSeats());
     if (!seat) {
-      const npc = [...this.pax.values()].find(p => p.npc);
+      const npc = [...this.pax.values()].find(p => p.npc && !isStand(p.seat));
       if (npc) {
         this.pax.delete(npc.pid);
         this.emit('pax:leave', { pid: npc.pid, reason: 'transfer' });
         seat = npc.seat;
       }
     }
+    // 座位全滿時站著
+    seat ??= STANDS.find(s => this.isFree(s)) ?? null;
     if (!seat) throw new Error(`room ${this.id} is full`);
-    const pax: ServerPax = {
-      pid: `p_${randomUUID().slice(0, 8)}`, seat, avatar, state: 'idle', since: Date.now(),
-      sid, awaySince: null, stateBeforeAway: null, dnd: false, lastNoteLeg: -1,
-    };
+    const pax: ServerPax = moving
+      ? { ...moving, seat }
+      : {
+          pid: `p_${randomUUID().slice(0, 8)}`, seat, ...who, state: 'idle', since: Date.now(),
+          sid, awaySince: null, stateBeforeAway: null, dnd: false, lastNoteLeg: -1,
+        };
     this.pax.set(pax.pid, pax);
     return pax;
+  }
+
+  /** 真人離開這節車廂（下車或走到隔壁）；回傳離開的乘客 */
+  removeHuman(pid: string): ServerPax | null {
+    const p = this.pax.get(pid);
+    if (!p || p.npc) return null;
+    this.pax.delete(pid);
+    return p;
+  }
+
+  isFree(seat: SpotId) {
+    return ![...this.pax.values()].some(p => p.seat === seat);
+  }
+
+  /** 換到同一節車廂的空位或站位 */
+  moveSeat(pid: string, seat: SpotId): boolean {
+    const p = this.pax.get(pid);
+    if (!p || p.seat === seat || !this.isFree(seat)) return false;
+    p.seat = seat;
+    return true;
   }
 
   /** 斷線：座位保留，他人眼中變成補眠；到站時若已離線超過寬限時間才下車 */
@@ -152,14 +149,14 @@ export class Room {
   }
 
   canWriteNote(pid: string) {
-    return this.pax.get(pid)?.lastNoteLeg !== this.legNo;
+    return this.pax.get(pid)?.lastNoteLeg !== this.run.legNo;
   }
 
   /** 寫在作者座位對應的車窗；同一扇窗只留最新的一則 */
   addNote(pid: string, authorSid: string, text: string): NoteRec {
     const p = this.pax.get(pid)!;
-    p.lastNoteLeg = this.legNo;
-    const window = Number(p.seat[0]) - 1;
+    p.lastNoteLeg = this.run.legNo;
+    const window = spotColumn(p.seat) - 1;
     for (const n of this.notes.values()) if (n.window === window) this.dropNote(n.nid);
     const now = Date.now();
     const ttl = this.cfg.noteTtlSec * 1000;
@@ -187,28 +184,16 @@ export class Room {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    clearTimeout(this.timer);
     clearInterval(this.fidget);
     for (const n of this.notes.values()) clearTimeout(n.timer);
-    this.onDispose(this);
   }
 
-  private takenSeats(): SeatId[] {
+  private takenSeats(): SpotId[] {
     return [...this.pax.values()].map(p => p.seat);
   }
 
-  private randomRunMs() {
-    const [min, max] = this.cfg.runSec;
-    return (min + Math.random() * (max - min)) * 1000;
-  }
-
-  private scheduleArrival() {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.arrive(), Math.max(0, this.leg.arriveAt - Date.now()));
-  }
-
-  private arrive() {
-    this.phase = 'dwell';
+  /** 列車到站：離線超過寬限時間的乘客下車，NPC 上下車 */
+  onArrive(station: string) {
     const now = Date.now();
     const leaving: string[] = [];
     for (const p of this.pax.values()) {
@@ -219,31 +204,15 @@ export class Room {
     }
     const npc = this.balanceNpcs(true);
     this.emit('train:arrive', {
-      station: this.line.stations[this.leg.to].code,
-      doorsOpenMs: this.dwellMs,
+      station,
+      doorsOpenMs: this.run.dwellMs,
       leaving,
       npc: { leave: npc.leave, board: npc.board.map(publicPax) },
     });
-
-    if (this.realCount === 0) {
-      if (++this.emptyStations >= 3) return this.dispose();
-    } else {
-      this.emptyStations = 0;
-    }
-    this.timer = setTimeout(() => this.depart(), this.dwellMs);
   }
 
-  private depart() {
-    const n = this.line.stations.length;
-    const from = this.leg.to;
-    let dir = this.leg.to > this.leg.from ? 1 : -1;
-    if (from + dir < 0 || from + dir >= n) dir = -dir; // 終點站折返
-    const now = Date.now();
-    this.leg = { from, to: from + dir, departAt: now, arriveAt: now + this.randomRunMs() };
-    this.legNo++;
-    this.phase = 'run';
-    this.emit('train:depart', { train: this.train });
-    this.scheduleArrival();
+  onDepart() {
+    this.emit('train:depart', { train: this.run.train });
   }
 
   /**
@@ -266,7 +235,7 @@ export class Room {
       const seat = pickSeat(this.takenSeats());
       if (!seat) break;
       const p: ServerPax = {
-        pid: `npc_${randomUUID().slice(0, 6)}`, seat, avatar: pick(AVATARS), state: pick(STATES), since: Date.now(), npc: true,
+        pid: `npc_${randomUUID().slice(0, 6)}`, seat, ...npcIdentity([...this.pax.values()].map(x => x.name)), state: pick(PAX_STATES), since: Date.now(), npc: true,
         sid: null, awaySince: null, stateBeforeAway: null, dnd: true, lastNoteLeg: -1,
       };
       this.pax.set(p.pid, p);
@@ -275,12 +244,12 @@ export class Room {
     return { leave, board };
   }
 
-  /** NPC 偶爾換個姿勢：喝口咖啡、翻書、打個盹 */
+  /** NPC 偶爾換個姿勢：戴上耳機、翻書、打個盹 */
   private npcFidget() {
-    if (this.phase !== 'run' || Math.random() < 0.5) return;
+    if (this.run.phase !== 'run' || Math.random() < 0.5) return;
     const npcs = [...this.pax.values()].filter(p => p.npc);
     if (npcs.length === 0) return;
     const p = pick(npcs);
-    this.setState(p.pid, pick(STATES.filter(s => s !== p.state)));
+    this.setState(p.pid, pick(PAX_STATES.filter(s => s !== p.state)));
   }
 }

@@ -17,20 +17,21 @@ function fallbackUrl(line: string) {
 
 function buildStats(): TicketStats | null {
   const s = store.getState();
-  if (!s.ride || !s.selfSeat || !bridge.game) return null;
+  const seat = s.ride?.seat ?? s.selfSeat;
+  if (!s.ride || !seat || !bridge.game) return null;
   const line = LINES[s.line];
-  const now = bridge.game.currentStation();
-  // 剛上車還沒經過任何一站時，終點寫「下一站」
-  const toIdx = now === s.ride.fromIdx ? s.train.to : now;
+  // 已下車：用下車站；還在車上：此刻的站，剛上車還沒經過任何一站時寫「下一站」
+  const now = s.ride.toIdx ?? bridge.game.currentStation();
+  const toIdx = s.ride.toIdx === undefined && now === s.ride.fromIdx ? s.train.to : now;
+  const endedAt = s.ride.endedAt ?? Date.now();
   return {
     line: s.line,
     from: line.stations[s.ride.fromIdx].code,
     to: line.stations[toIdx].code,
-    seat: s.selfSeat,
+    seat,
     boardedAt: s.ride.boardedAt,
-    minutes: Math.max(1, Math.round((Date.now() - s.ride.boardedAt) / 60_000)),
+    minutes: Math.max(1, Math.round((endedAt - s.ride.boardedAt) / 60_000)),
     pomodoros: s.pomodorosDone,
-    coffee: s.coffeeReceived,
     cheers: s.cheersReceived,
     coRiders: s.ride.coRiders,
     quote: 0,

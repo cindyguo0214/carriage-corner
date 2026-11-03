@@ -78,8 +78,10 @@ export function drawTicket({ stats, shareUrl, note }: TicketView): HTMLCanvasEle
   // 隨行卡與座位
   text('隨行卡 PassCard', 350, 512, 28, pal.muted);
   text(PASS_CARDS[stats.card].zh, 350, 568, 40, pal.ink, { bold: true });
-  text('座位', R, 505, 28, pal.muted, { align: 'right' });
-  text(stats.seat, R, 568, 84, pal.ink, { bold: true, align: 'right' });
+  // 站著拉吊環的人：S3 → 站位 3
+  const standing = stats.seat.startsWith('S');
+  text(standing ? '站位' : '座位', R, 505, 28, pal.muted, { align: 'right' });
+  text(standing ? stats.seat.slice(1) : stats.seat, R, 568, 84, pal.ink, { bold: true, align: 'right' });
 
   // 日期與乘車時間（台北時間）
   const on = taipeiParts(stats.boardedAt);
@@ -89,7 +91,7 @@ export function drawTicket({ stats, shareUrl, note }: TicketView): HTMLCanvasEle
   text(`乘車　${on.hh}:${on.mm} → ${off.hh}:${off.mm}（${stats.minutes} 分）`, L, 740, 36, pal.ink);
 
   // 撕線以下：這段旅程
-  text(`📖 專注 ×${stats.pomodoros}　☕ ×${stats.coffee}　👏 ×${stats.cheers}`, L, 930, 42, pal.ink);
+  text(`📖 專注 ×${stats.pomodoros}　🙂 收到微光 ×${stats.cheers}`, L, 930, 42, pal.ink);
   text(companionLine(stats.coRiders), L, 1005, 32, pal.muted);
 
   let y = 1085;

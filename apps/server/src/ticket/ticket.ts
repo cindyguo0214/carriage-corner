@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import {
   companionLine, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
-  type LineId, type SeatId, type TicketStats,
+  type LineId, type SpotId, type TicketStats,
 } from '@cc/shared';
 import { drawText, textWidth } from './font';
 import { Bitmap } from './png';
@@ -14,11 +14,10 @@ const TicketFields = z.object({
   line: z.enum(['CX', 'RV', 'SK']),
   from: z.string().regex(/^[A-Z]{2}\d{2}$/),
   to: z.string().regex(/^[A-Z]{2}\d{2}$/),
-  seat: z.string().regex(/^[1-6][AB]$/).transform(s => s as SeatId),
+  seat: z.string().regex(/^([1-6][AB]|S[1-6])$/).transform(s => s as SpotId),
   boardedAt: z.number().int(),
   minutes: z.number().int().min(1).max(24 * 60),
   pomodoros: z.number().int().min(0).max(99),
-  coffee: z.number().int().min(0).max(999),
   cheers: z.number().int().min(0).max(999),
   coRiders: z.number().int().min(0).max(9999),
   quote: z.number().int().min(0).max(99),
@@ -64,22 +63,23 @@ export class TicketSigner {
 
 // 分享連結越短越好：以陣列取代物件鍵名、時間以秒為單位的 36 進位表示，長度約為 JSON 物件的一半
 const CARDS = ['tile', 'boba', 'ricecooker', 'mangoice'] as const;
-type Packed = [1, string, string, string, string, string, number, number, number, number, number, number, 0 | 1, number, string];
+// 版本 2：拿掉了咖啡次數（車廂內禁止飲食）
+type Packed = [2, string, string, string, string, string, number, number, number, number, number, 0 | 1, number, string];
 
 function pack(t: TicketStats): Packed {
   return [
-    1, t.line, t.from.slice(2), t.to.slice(2), t.seat, Math.floor(t.boardedAt / 1000).toString(36),
-    t.minutes, t.pomodoros, t.coffee, t.cheers, t.coRiders, t.quote, t.mode === 'night' ? 1 : 0,
+    2, t.line, t.from.slice(2), t.to.slice(2), t.seat, Math.floor(t.boardedAt / 1000).toString(36),
+    t.minutes, t.pomodoros, t.cheers, t.coRiders, t.quote, t.mode === 'night' ? 1 : 0,
     CARDS.indexOf(t.card), t.room.slice(3),
   ];
 }
 
 function unpack(a: Packed): TicketStats | null {
-  if (!Array.isArray(a) || a[0] !== 1) return null;
-  const [, line, from, to, seat, boarded, minutes, pomodoros, coffee, cheers, coRiders, quote, night, card, room] = a;
+  if (!Array.isArray(a) || a[0] !== 2) return null;
+  const [, line, from, to, seat, boarded, minutes, pomodoros, cheers, coRiders, quote, night, card, room] = a;
   const parsed = TicketFields.safeParse({
     line, from: `${line}${from}`, to: `${line}${to}`, seat, boardedAt: parseInt(boarded, 36) * 1000,
-    minutes, pomodoros, coffee, cheers, coRiders, quote, mode: night ? 'night' : 'morning', card: CARDS[card], room: `${line}-${room}`,
+    minutes, pomodoros, cheers, coRiders, quote, mode: night ? 'night' : 'morning', card: CARDS[card], room: `${line}-${room}`,
   });
   return parsed.success && stationByCode(parsed.data.line, parsed.data.from) && stationByCode(parsed.data.line, parsed.data.to)
     ? parsed.data
@@ -126,7 +126,7 @@ export function renderOgImage(t: TicketStats): Buffer {
   b.rect(8, 84, 2, 6, pal.outside);
   b.rect(230, 84, 2, 6, pal.outside);
 
-  drawText(b, `FOCUS X${t.pomodoros}  COFFEE X${t.coffee}  CHEER X${t.cheers}`, 16, 94, pal.ink);
+  drawText(b, `FOCUS X${t.pomodoros}  CHEER X${t.cheers}`, 16, 94, pal.ink);
   const p = taipeiParts(t.boardedAt);
   const date = `${p.y}.${String(p.mo).padStart(2, '0')}.${String(p.d).padStart(2, '0')}`;
   drawText(b, `CARRIAGE CORNER - ${OPERATOR.en}`, 16, 106, pal.muted);
@@ -199,7 +199,7 @@ export function renderLanding(t: TicketStats, token: string, origin: string): st
       <div class="row"><span>座位 <b>${esc(t.seat)}</b></span><span>隨行卡・${esc(PASS_CARDS[t.card].zh)}</span></div>
       <div class="row"><span>${p.y}.${String(p.mo).padStart(2, '0')}.${String(p.d).padStart(2, '0')}（${p.wd}）${p.hh}:${p.mm} 上車</span><span>${t.minutes} 分鐘</span></div>
       <div class="cut"></div>
-      <div>📖 專注 ×${t.pomodoros}　☕ ×${t.coffee}　👏 ×${t.cheers}</div>
+      <div>📖 專注 ×${t.pomodoros}　👏 ×${t.cheers}</div>
       <p class="muted">${esc(companionLine(t.coRiders))}</p>
       <p class="quote">「${esc(quoteOf(t))}」</p>
       <p class="muted">No. ${esc(ticketSerial(t))}</p>
