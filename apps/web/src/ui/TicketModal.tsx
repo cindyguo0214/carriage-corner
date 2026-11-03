@@ -4,7 +4,16 @@ import { LINES, QUOTES, shareText, ticketSerial, type TicketStats } from '@cc/sh
 import { bridge } from '../gameBridge';
 import { actions, store, useApp } from '../store';
 import { renderTicket } from '../ticket/render';
-import { copyText, downloadImage, isInAppBrowser, shareImage, threadsIntentUrl } from '../ticket/share';
+import { copyText, isInAppBrowser, saveImage, shareImage, threadsIntentUrl } from '../ticket/share';
+
+/** claude.ai Artifact 版：系統分享被擋，改用 downloads 能力存檔（iOS 會開分享表單） */
+const ARTIFACT = import.meta.env.VITE_TARGET === 'artifact';
+
+/** 沒有簽章連結時（離線、Artifact 版）車票指向的網址 */
+function fallbackUrl(line: string) {
+  const configured = import.meta.env.VITE_SHARE_URL as string | undefined;
+  return configured || `${location.origin}${location.pathname}?line=${line}`;
+}
 
 function buildStats(): TicketStats | null {
   const s = store.getState();
@@ -56,7 +65,7 @@ function TicketDialog() {
     let objectUrl = '';
     (async () => {
       // 連線時取得簽章連結（Threads 貼上會顯示車票預覽卡）；離線時連到首頁並預選同一條線
-      const url = (await bridge.game?.signTicket(stats)) ?? `${location.origin}/?line=${stats.line}`;
+      const url = (await bridge.game?.signTicket(stats)) ?? fallbackUrl(stats.line);
       const blob = await renderTicket({ stats, shareUrl: url, note: withNote ? myNote : null });
       if (cancelled) return;
       objectUrl = URL.createObjectURL(blob);
@@ -88,13 +97,20 @@ function TicketDialog() {
   const fileName = `carriage-corner-${ticketSerial(stats)}.png`;
   const text = shareUrl ? shareText(stats, shareUrl) : '';
 
+  const onSave = async () => {
+    if (!image) return;
+    const outcome = await saveImage(image.blob, fileName);
+    setMessage({
+      saved: '車票已存下，到 Threads 發文時記得附上。',
+      downloaded: '圖片已下載，到 Threads 發文時記得附上。',
+      declined: '',
+      unavailable: '這裡無法直接存檔，長按上方圖片即可儲存。',
+    }[outcome]);
+  };
   const onShare = async () => {
     if (!image) return;
     const outcome = await shareImage(image.blob, fileName, text);
-    if (outcome === 'unsupported') {
-      downloadImage(image.blob, fileName);
-      setMessage('圖片已下載，到 Threads 發文時記得附上。');
-    }
+    if (outcome === 'unsupported') await onSave();
   };
   const onCopy = async () => setMessage((await copyText(text)) ? '文案已複製。' : '無法複製，請長按文字自行複製。');
 
@@ -132,13 +148,18 @@ function TicketDialog() {
         {myNote && withNote && <p className="text-xs opacity-70">車窗上的話只會印在這張圖上，不會出現在公開連結裡。</p>}
 
         <div className="grid grid-cols-2 gap-2">
-          {!inApp && (
+          {ARTIFACT && (
+            <button disabled={!image} className={`col-span-2 rounded px-3 py-2 disabled:opacity-40 ${primary}`} onClick={() => void onSave()}>
+              存下車票
+            </button>
+          )}
+          {!ARTIFACT && !inApp && (
             <button disabled={!image} className={`col-span-2 rounded px-3 py-2 disabled:opacity-40 ${primary}`} onClick={() => void onShare()}>
               分享車票
             </button>
           )}
-          {!inApp && (
-            <button disabled={!image} className={`rounded px-3 py-2 disabled:opacity-40 ${chip}`} onClick={() => image && downloadImage(image.blob, fileName)}>
+          {!ARTIFACT && !inApp && (
+            <button disabled={!image} className={`rounded px-3 py-2 disabled:opacity-40 ${chip}`} onClick={() => void onSave()}>
               下載圖片
             </button>
           )}
@@ -150,7 +171,7 @@ function TicketDialog() {
             target="_blank"
             rel="noopener noreferrer"
             aria-disabled={!shareUrl}
-            className={`rounded px-3 py-2 text-center ${chip} ${inApp ? '' : 'col-span-2'} ${shareUrl ? '' : 'pointer-events-none opacity-40'}`}
+            className={`rounded px-3 py-2 text-center ${chip} ${inApp || ARTIFACT ? '' : 'col-span-2'} ${shareUrl ? '' : 'pointer-events-none opacity-40'}`}
           >
             到 Threads 發文
           </a>

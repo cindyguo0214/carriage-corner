@@ -11,7 +11,8 @@
     "dev:server": "npm run dev -w @cc/server",
     "build": "npm run build -w @cc/web",
     "test": "npm test -w @cc/server",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build:artifact": "npm run build:artifact -w @cc/web"
   },
   "devDependencies": {
     "concurrently": "^10.0.6",

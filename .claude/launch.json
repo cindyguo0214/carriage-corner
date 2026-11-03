@@ -9,6 +9,13 @@
       "url": "http://127.0.0.1:5188"
     },
     {
+      "name": "artifact-build",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--outDir", "dist-artifact", "--host", "127.0.0.1", "--port", "5190", "--strictPort", "apps/web"],
+      "port": 5190,
+      "url": "http://127.0.0.1:5190"
+    },
+    {
       "name": "web-only",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:web"],

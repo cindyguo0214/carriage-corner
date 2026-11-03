@@ -80,6 +80,22 @@ npm run build
 
 `npm test` 會啟動真正的伺服器，用 socket.io client 驗證分流、微光匿名、勿擾、留言過濾與檢舉、斷線重連、到站下車；並驗證車票簽章、竄改防護、落地頁 OG 標籤與 PNG 預覽圖格式。
 
+## 手機上用 Claude 打開（Artifact 單機版）
+
+已發布為私人 Artifact：<https://claude.ai/artifact/MvHWPjv9DZm9oebKQpfKok>（在 Claude App 或 claude.ai 都能開）。
+
+- Artifact 沒有即時伺服器，所以是**離線單機版**：車廂裡的乘客是本機模擬，沒有多人同車
+- 車票用 Artifact 的 `downloads` 能力存檔（iOS Claude App 會打開系統分享表單），QR Code 指向這個 Artifact
+- 目前只有你看得到；要給別人玩，從頁面的 Share 選單分享
+
+更新方式：
+
+```bash
+npm run build:artifact
+```
+
+產出在 `apps/web/dist-artifact/`（`page.html` 是 Artifact 頁面、`assets/` 是程式檔），再請 Claude 發布到同一個 Artifact 網址。
+
 ## 結構
 
 ```

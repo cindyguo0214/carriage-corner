@@ -6,7 +6,9 @@ import { devParams, modeForHour, store } from './store';
 // 玩家在閘門選路線、選卡面的這幾秒，背景先把場景與 HUD 模組載好（docs/PRD.md §6.5）
 const gameModule = import('./game/boot');
 const hudModule = import('./ui/mountHud');
-const netModule = import('./net/session');
+// Artifact 靜態版沒有即時伺服器：不嘗試連線，直接用離線模式，進站不必等逾時
+const REALTIME = import.meta.env.VITE_TARGET !== 'artifact';
+const netModule = REALTIME ? import('./net/session') : null;
 
 const gate = document.getElementById('gate')!;
 const boardButton = document.getElementById('board') as HTMLButtonElement;
@@ -44,7 +46,7 @@ boardButton.addEventListener('click', async () => {
     const [{ boot }, { mountHud }, session] = await Promise.all([
       gameModule,
       hudModule,
-      netModule.then(m => m.connectAndBoard({ line, avatar, passCard })),
+      netModule ? netModule.then(m => m.connectAndBoard({ line, avatar, passCard })) : null,
     ]);
     await boot(document.getElementById('stage')!, session);
     mountHud(document.getElementById('hud')!);
