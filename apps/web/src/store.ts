@@ -12,6 +12,8 @@ export interface Pomodoro {
 export interface GlowMenu {
   seat: SpotId;
   name: string;
+  /** 對方此刻的狀態：決定「同頻波紋」「蓋上小毯」能不能用、會變成什麼 */
+  state: PaxState;
   /** 以 CSS px 表示的選單位置 */
   x: number;
   y: number;

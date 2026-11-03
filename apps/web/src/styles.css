@@ -77,3 +77,12 @@
     animation: none;
   }
 }
+
+/* 互動時頭上浮起的字 */
+.name-label--pop {
+  background: transparent;
+  color: var(--color-lamp);
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow: 0 1px 0 rgb(30 28 36 / 0.9), 0 0 6px rgb(30 28 36 / 0.6);
+}

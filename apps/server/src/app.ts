@@ -2,7 +2,7 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { z } from 'zod';
-import { FALLBACK_NAME, HARD_CAP, SPOTS, tidyName, type ClientToServer, type ServerToClient } from '@cc/shared';
+import { FALLBACK_NAME, FORTUNES, HARD_CAP, SPOTS, tidyName, type ClientToServer, type ServerToClient } from '@cc/shared';
 import type { Config } from './config';
 import { Limiter } from './limiter';
 import { moderate, Moderation } from './moderation';
@@ -28,7 +28,7 @@ const BoardReq = z.object({
   passCard: z.enum(['tile', 'boba', 'ricecooker', 'mangoice']),
 });
 const StateReq = z.object({ state: z.enum(['idle', 'music', 'read', 'sleep']) });
-const GlowReq = z.object({ to: z.string().max(32), kind: z.enum(['nod', 'light', 'pat']) });
+const GlowReq = z.object({ to: z.string().max(32), kind: z.enum(['beep', 'wave', 'blanket', 'fortune']) });
 const SeatReq = z.object({ seat: z.enum(SPOTS as [string, ...string[]]).transform(s => s as (typeof SPOTS)[number]) });
 const CarReq = z.object({ dir: z.union([z.literal(-1), z.literal(1)]) });
 const NoteReq = z.object({ text: z.string().max(200) });
@@ -171,14 +171,17 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
       const ctx = current();
       if (!req.success || !ctx) return ack(BAD);
       const { pid } = ctx.pax;
+      const target = ctx.room.pax.get(req.data.to);
+      if (!target || target.pid === pid) return ack({ ok: false, code: 'NO_TARGET' });
+      // 小毯只能蓋給正在補眠的人
+      if (req.data.kind === 'blanket' && target.state !== 'sleep') return ack({ ok: false, code: 'NO_TARGET' });
       const allowed =
         limiter.take(`glow:${pid}`, 10, 60_000) && limiter.take(`glow:${pid}>${req.data.to}`, 1, 120_000);
       if (!allowed) return ack(LIMITED);
-      const target = ctx.room.pax.get(req.data.to);
-      if (!target || target.pid === pid) return ack({ ok: false, code: 'NO_TARGET' });
+      const fortune = req.data.kind === 'fortune' ? Math.floor(Math.random() * FORTUNES.length) : null;
       // 廣播不帶送出者；送出者自己的動畫由用戶端在 ack 後播放，所以排除送出者
-      if (!target.dnd) socket.to(ctx.room.id).emit('glow', { to: target.pid, kind: req.data.kind, at: Date.now() });
-      ack({ ok: true }); // 對方開勿擾時仍回成功，送出者不會感覺被拒絕
+      if (!target.dnd) socket.to(ctx.room.id).emit('glow', { to: target.pid, kind: req.data.kind, at: Date.now(), fortune });
+      ack({ ok: true, data: { fortune } }); // 對方開勿擾時仍回成功，送出者不會感覺被拒絕
     });
 
     socket.on('note:write', (raw, ack) => {

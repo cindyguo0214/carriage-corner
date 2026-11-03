@@ -15,10 +15,18 @@ const STATES: { state: PaxState; icon: string; label: string }[] = [
   { state: 'sleep', icon: '😴', label: '補眠' },
 ];
 
-const GLOWS: { kind: GlowKind; label: string }[] = [
-  { kind: 'nod', label: '🙂 點頭致意' },
-  { kind: 'light', label: '✨ 遞上微光' },
-  { kind: 'pat', label: '🤝 拍拍肩膀' },
+/** 對其他乘客的互動（docs/PRD.md 第 17 章）：依對方此刻的狀態調整說明，蓋小毯只能給正在補眠的人 */
+const GLOWS: {
+  kind: GlowKind;
+  icon: string;
+  title: string;
+  hint: (state: PaxState) => string;
+  enabled?: (state: PaxState) => boolean;
+}[] = [
+  { kind: 'beep', icon: '🪪', title: '嗶卡默契', hint: () => '刷一下隨行卡打招呼' },
+  { kind: 'wave', icon: '🎵', title: '同頻波紋', hint: st => (st === 'music' ? '一起跟著音樂跳動 3 秒' : '送上一點溫暖微光') },
+  { kind: 'blanket', icon: '💤', title: '蓋上小毯', hint: st => (st === 'sleep' ? '幫補眠的人蓋上小毯子' : '對方補眠時才能蓋'), enabled: st => st === 'sleep' },
+  { kind: 'fortune', icon: '📜', title: '遞幸運籤', hint: () => '送一張今日小吉籤' },
 ];
 
 const CHANNELS: { ch: Channel; icon: string; label: string }[] = [
@@ -451,25 +459,39 @@ function GlowMenu() {
   const menu = useApp(s => s.ui.glowMenu);
   if (!menu) return null;
   const send = (kind: GlowKind) => {
-    bridge.game?.glow(menu.seat, kind);
+    void bridge.game?.glow(menu.seat, kind);
     actions.setUi({ glowMenu: null });
   };
-  const x = Math.max(8, Math.min(menu.x - 140, window.innerWidth - 330));
-  const y = Math.max(menu.y - 90, 8);
+  const x = Math.max(8, Math.min(menu.x - 150, window.innerWidth - 316));
+  const y = Math.max(8, Math.min(menu.y - 150, window.innerHeight - 200));
   return (
     <div
       role="menu"
-      aria-label={`對 ${menu.name} 送出微光`}
-      className={`pointer-events-auto fixed flex flex-col gap-1 rounded p-1.5 ${theme.panel}`}
+      aria-label={`和 ${menu.name} 互動`}
+      className={`pointer-events-auto fixed w-[300px] rounded p-2 ${theme.panel}`}
       style={{ left: x, top: y }}
     >
-      <span className="px-1 text-xs opacity-70">給 {menu.name}（對方不會知道是誰）</span>
-      <div className="flex gap-1">
-        {GLOWS.map((g, i) => (
-          <button key={g.kind} role="menuitem" autoFocus={i === 0} className={`whitespace-nowrap rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => send(g.kind)}>
-            {g.label}
-          </button>
-        ))}
+      <p className="mb-1.5 px-1 text-xs opacity-70">給 {menu.name}（對方不會知道是誰）</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {GLOWS.map((g, i) => {
+          const enabled = g.enabled?.(menu.state) ?? true;
+          return (
+            <button
+              key={g.kind}
+              role="menuitem"
+              autoFocus={i === 0}
+              disabled={!enabled}
+              className={`flex items-start gap-2 rounded px-2 py-1.5 text-left disabled:cursor-not-allowed disabled:opacity-40 ${theme.chip}`}
+              onClick={() => send(g.kind)}
+            >
+              <span className="text-lg leading-none" aria-hidden>{g.icon}</span>
+              <span className="flex flex-col">
+                <span className="font-medium">{g.title}</span>
+                <span className="text-[11px] leading-snug opacity-70">{g.hint(menu.state)}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

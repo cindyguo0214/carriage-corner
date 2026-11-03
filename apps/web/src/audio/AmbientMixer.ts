@@ -152,6 +152,12 @@ export class AmbientMixer {
     this.duck(len * 1000 + 300);
   }
 
+  /** 嗶卡默契：比進站閘門短一點、亮一點的「嗶」 */
+  playCardBeep() {
+    if (!this.ctx) return;
+    this.beep(1480, this.ctx.currentTime + 0.01, 0.11);
+  }
+
   playPomodoroBell() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + 0.02;

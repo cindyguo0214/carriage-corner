@@ -12,8 +12,8 @@ export type StandId = `S${1 | 2 | 3 | 4 | 5 | 6}`;
 export type SpotId = SeatId | StandId;
 // 車廂內禁止飲食：沒有「喝咖啡」狀態，也沒有「遞咖啡」
 export type PaxState = 'idle' | 'music' | 'read' | 'sleep';
-// 微光：點頭致意、遞上微光、拍拍肩膀（安靜的鼓勵）
-export type GlowKind = 'nod' | 'light' | 'pat';
+// 對其他乘客的互動（docs/PRD.md 第 17 章）：嗶卡默契、同頻波紋、蓋上小毯（對方補眠時）、遞幸運籤
+export type GlowKind = 'beep' | 'wave' | 'blanket' | 'fortune';
 export type Segment = 'underground' | 'elevated' | 'portal_up' | 'portal_down';
 export type Mode = 'morning' | 'night';
 
@@ -82,7 +82,8 @@ export interface ClientToServer {
   /** 經貫通道走到相鄰車廂：-1 往第 1 節、+1 往最後一節 */
   'car:move': (req: { dir: -1 | 1 }, ack: (res: Ack<BoardedSnapshot>) => void) => void;
   'state:set': (req: { state: PaxState }, ack: (res: Ack) => void) => void;
-  'glow:send': (req: { to: string; kind: GlowKind }, ack: (res: Ack) => void) => void;
+  /** fortune：遞幸運籤時伺服器抽的籤（FORTUNES 索引），其他種類為 null */
+  'glow:send': (req: { to: string; kind: GlowKind }, ack: (res: Ack<{ fortune: number | null }>) => void) => void;
   'note:write': (req: { text: string }, ack: (res: Ack<{ nid: string }>) => void) => void;
   'note:report': (req: { nid: string }, ack: (res: Ack) => void) => void;
   'pref:set': (req: { dnd: boolean }, ack: (res: Ack) => void) => void;
@@ -94,7 +95,7 @@ export interface ServerToClient {
   'pax:leave': (p: { pid: string; reason: 'station' | 'transfer' }) => void;
   'pax:move': (p: { pid: string; seat: SpotId }) => void;
   'pax:state': (p: { pid: string; state: PaxState; since: number }) => void;
-  glow: (g: { to: string; kind: GlowKind; at: number }) => void;
+  glow: (g: { to: string; kind: GlowKind; at: number; fortune: number | null }) => void;
   'note:new': (n: WindowNote) => void;
   'note:gone': (n: { nid: string }) => void;
   'train:arrive': (e: {
@@ -120,6 +121,6 @@ export const NAME_MAX_GRAPHEMES = 8;
 export const FALLBACK_NAME = '旅人';
 /** 一列車的車廂數 */
 export const CARS = 4;
-export const GLOW_KINDS: GlowKind[] = ['nod', 'light', 'pat'];
+export const GLOW_KINDS: GlowKind[] = ['beep', 'wave', 'blanket', 'fortune'];
 export const PAX_STATES: PaxState[] = ['idle', 'music', 'read', 'sleep'];
 export const AVATARS: AvatarId[] = ['office', 'student', 'hoodie', 'headphone'];

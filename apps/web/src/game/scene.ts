@@ -8,6 +8,10 @@ export interface Scene {
   readonly kind: 'platform' | 'carriage';
   /** 畫進 640×360 RenderTexture 的內容 */
   readonly world: Container;
+  /** 以螢幕解析度畫在最上層的內容（world 座標，例如車窗上的字） */
+  readonly overlay?: Container;
+  /** 每個 world px 對應幾個裝置像素：overlay 的文字以此解析度光柵化 */
+  setPixelScale?(scale: number): void;
   update(dt: number, now: number): void;
   /** world 座標的點擊；client 為 CSS px，用來定位 DOM 選單 */
   tap(x: number, y: number, client: { x: number; y: number }): void;

@@ -24,6 +24,10 @@ export class Stage {
   private worldInScreen = new Sprite(this.worldRT);
   private display = new Sprite(this.worldRT);
   private fade = new Sprite();
+  /** 螢幕解析度的疊層（車窗上的字）：跟著同一個鏡頭，裁在遊戲畫面範圍內 */
+  private overlay = new Container();
+  private overlayMask = new Graphics();
+  private pixelScale = 1;
   private fadeT = 0;
   private fadeSec = 1.2;
   /** 換車廂的滑動：舊畫面往反方向滑出、新車廂從前進方向滑入 */
@@ -57,7 +61,8 @@ export class Stage {
     this.worldInScreen.y = PORTRAIT_WORLD_Y;
     this.screen.addChild(this.screenBg, this.worldInScreen);
     this.fade.visible = false;
-    this.app.stage.addChild(this.display, this.fade);
+    this.overlay.mask = this.overlayMask;
+    this.app.stage.addChild(this.display, this.fade, this.overlay, this.overlayMask);
     this.app.renderer.on('resize', () => this.layout());
     this.bindInput();
 
@@ -85,8 +90,11 @@ export class Stage {
   show(scene: Scene, transition: boolean) {
     if (transition && this.scene) this.snapshotForFade(0.9);
     this.scene?.dispose();
+    this.overlay.removeChildren();
     this.scene = scene;
+    if (scene.overlay) this.overlay.addChild(scene.overlay);
     scene.setMode(this.mode, this.chars);
+    scene.setPixelScale?.(this.pixelScale);
     this.applyColors();
     this.lastFocus = NaN;
     this.layout();
@@ -160,6 +168,10 @@ export class Stage {
     this.fade.scale.copyFrom(this.display.scale);
     this.fade.position.copyFrom(this.display.position);
     this.lastFocus = NaN;
+    this.overlayMask.clear().rect(this.display.x, this.display.y, bw * this.cssScale, bh * this.cssScale).fill(0xffffff);
+    this.overlay.scale.set(this.cssScale);
+    this.pixelScale = scale;
+    this.scene?.setPixelScale?.(scale);
   }
 
   private snapshotForFade(sec: number) {
@@ -242,6 +254,10 @@ export class Stage {
         this.fade.texture.destroy(true);
       }
     }
+    // 疊層跟著畫面（含直式鏡頭與換車廂的滑動）；交叉淡化時跟新畫面一起浮現
+    this.overlay.x = this.display.x - (this.portrait ? this.camX * this.cssScale : 0);
+    this.overlay.y = this.display.y + (this.portrait ? PORTRAIT_WORLD_Y * this.cssScale : 0);
+    this.overlay.alpha = this.fade.visible && this.slideDir === 0 ? 1 - this.fade.alpha : 1;
     this.renderLabels(scene);
   }
 
