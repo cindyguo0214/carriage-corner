@@ -97,6 +97,8 @@ npm test
 npm run build
 ```
 
+GitHub Actions（`.github/workflows/ci.yml`）在每個 PR 與推到 main 時，以 Node 22 與 24 跑同樣的型別檢查、測試與兩種建置（網頁版、Artifact 版）。
+
 `npm test` 會啟動真正的伺服器，用 socket.io client 驗證分流、名字過濾、微光匿名、勿擾、留言過濾與檢舉、換座位與站位、換車廂、開門下車、斷線重連；並驗證車票簽章、竄改防護、落地頁 OG 標籤與 PNG 預覽圖格式。
 
 ## 手機上用 Claude 打開（Artifact 單機版）
