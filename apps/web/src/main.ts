@@ -1,6 +1,6 @@
 import './styles.css';
 import {
-  LINES, looksLikeContact, needsCare, stationIsUnderground, tidyName,
+  hasDeniedWord, LINES, looksLikeContact, needsCare, stationIsUnderground, tidyName,
   type AvatarId, type Gender, type LineId, type PassCardId,
 } from '@cc/shared';
 import { mixer } from './audio/AmbientMixer';
@@ -96,6 +96,11 @@ function readName(): string | null {
   }
   if (looksLikeContact(name)) {
     nameError.textContent = '名字裡不能放聯絡方式喔。';
+    nameInput.focus();
+    return null;
+  }
+  if (hasDeniedWord(name)) {
+    nameError.textContent = '這個名字不太友善，換一個吧。';
     nameInput.focus();
     return null;
   }

@@ -1,12 +1,9 @@
-// 霧氣留言過濾（docs/PRD.md §7.7）：正規化 → 長度 → 自傷字詞（關懷流程，字詞表在 @cc/shared）→ 聯絡方式 → 詞庫
-import { looksLikeContact, needsCare, NOTE_MAX_GRAPHEMES, splitGraphemes, squashForMatch } from '@cc/shared';
+// 霧氣留言過濾（docs/PRD.md §7.7）：正規化 → 長度 → 自傷字詞（關懷流程）→ 聯絡方式 → 詞庫；兩份字詞表都在 @cc/shared
+import { hasDeniedWord, looksLikeContact, needsCare, NOTE_MAX_GRAPHEMES, splitGraphemes } from '@cc/shared';
 
 export type Verdict =
   | { ok: true; text: string }
   | { ok: false; reason: 'empty' | 'length' | 'contact' | 'deny' | 'care' };
-
-// 初版詞庫只放少量示意，正式版改由可熱更新的設定檔載入
-const DENY = ['幹你', '操你', '去死', '白痴', '白癡', '智障', '垃圾人', '賤人'];
 
 function normalize(text: string): string {
   return text
@@ -22,8 +19,7 @@ export function moderate(raw: string, maxGraphemes = NOTE_MAX_GRAPHEMES): Verdic
   if (splitGraphemes(text).length > maxGraphemes) return { ok: false, reason: 'length' };
   if (needsCare(text)) return { ok: false, reason: 'care' };
   if (looksLikeContact(text)) return { ok: false, reason: 'contact' };
-  const flat = squashForMatch(text);
-  if (DENY.some(w => flat.includes(w))) return { ok: false, reason: 'deny' };
+  if (hasDeniedWord(text)) return { ok: false, reason: 'deny' };
   return { ok: true, text };
 }
 
