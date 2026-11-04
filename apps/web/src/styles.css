@@ -207,3 +207,201 @@
     animation: none;
   }
 }
+
+/* 隨身聽情境面板（docs/PRD.md 第 22 章）：像素復古隨身聽，莫蘭迪低飽和 */
+.walkman {
+  --body: #b8c0b3;
+  --body-lo: #9ea89a;
+  --body-hi: #d3d9cf;
+  --edge: #4a4744;
+  --window: #3a3846;
+  --key: #e8e1d5;
+  --key-lo: #c9bfae;
+  --key-on: #d9b98c;
+  pointer-events: auto;
+  align-self: center;
+  width: min(19rem, calc(100vw - 1.5rem));
+  padding: 10px 12px 12px;
+  color: var(--edge);
+  background: var(--body);
+  /* 階梯狀切角＋多層描邊：像素塑膠外殼 */
+  clip-path: polygon(0 6px, 3px 6px, 3px 3px, 6px 3px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 3px, calc(100% - 3px) 3px,
+    calc(100% - 3px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 3px) calc(100% - 6px), calc(100% - 3px) calc(100% - 3px),
+    calc(100% - 6px) calc(100% - 3px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 3px), 3px calc(100% - 3px), 3px calc(100% - 6px), 0 calc(100% - 6px));
+  box-shadow: inset 0 0 0 2px var(--edge), inset 0 3px 0 2px var(--body-hi), inset 0 -4px 0 2px var(--body-lo);
+  font-size: 12px;
+}
+
+.walkman[data-night='true'] {
+  --body: #6f7a6c;
+  --body-lo: #5c6659;
+  --body-hi: #858f81;
+  --edge: #24232b;
+  --window: #24232b;
+  --key: #4a4756;
+  --key-lo: #3a3846;
+  --key-on: #d9b98c;
+  color: #e8e1d5;
+}
+
+.walkman__top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.walkman__led {
+  width: 6px;
+  height: 6px;
+  background: #b97a6f;
+  box-shadow: 0 0 0 1px var(--edge);
+}
+
+.walkman__fold {
+  margin-left: auto;
+  width: 22px;
+  height: 18px;
+  line-height: 14px;
+  font-weight: 700;
+  background: var(--key);
+  color: inherit;
+  box-shadow: inset 0 0 0 2px var(--edge), inset 0 -2px 0 2px var(--key-lo);
+}
+
+/* 卡帶窗：兩個轉盤，播放時慢慢轉 */
+.walkman__window {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background: var(--window);
+  color: #e8e1d5;
+  box-shadow: inset 0 0 0 2px var(--edge);
+}
+
+.walkman__reel {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: conic-gradient(#e8e1d5 0 30deg, #8f8b84 30deg 120deg, #e8e1d5 120deg 150deg, #8f8b84 150deg 240deg,
+    #e8e1d5 240deg 270deg, #8f8b84 270deg 360deg);
+  box-shadow: 0 0 0 2px #24232b, inset 0 0 0 5px #8f8b84;
+  animation: walkman-spin 2.4s linear infinite;
+}
+
+.walkman__label {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.walkman__label b {
+  display: block;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+}
+
+.walkman__label small {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.walkman__keys {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.walkman__key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 0 4px;
+  background: var(--key);
+  color: inherit;
+  font-size: 11px;
+  box-shadow: inset 0 0 0 2px var(--edge), inset 0 -3px 0 2px var(--key-lo);
+}
+
+.walkman__key span {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.walkman__key[aria-checked='true'] {
+  background: var(--key-on);
+  color: #3a3846;
+  transform: translateY(1px);
+  box-shadow: inset 0 0 0 2px var(--edge), inset 0 2px 0 2px rgb(0 0 0 / 0.12);
+}
+
+.walkman__key:focus-visible,
+.walkman__fold:focus-visible,
+.walkman-chip:focus-visible {
+  outline: 2px solid var(--color-lamp);
+  outline-offset: 2px;
+}
+
+.walkman__vol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  font-size: 11px;
+}
+
+.walkman__vol input {
+  flex: 1;
+  accent-color: #b97a6f;
+}
+
+.walkman__credit {
+  margin-top: 6px;
+  font-size: 9px;
+  opacity: 0.65;
+  text-align: right;
+}
+
+/* 收起來時的小膠囊：點了再展開 */
+.walkman-chip {
+  pointer-events: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 6px;
+  background: #b8c0b3;
+  color: #4a4744;
+  font-size: 12px;
+  box-shadow: inset 0 0 0 2px #4a4744, inset 0 -3px 0 2px #9ea89a;
+}
+
+.walkman-chip .walkman__reel {
+  width: 12px;
+  height: 12px;
+  box-shadow: 0 0 0 2px #24232b, inset 0 0 0 3px #8f8b84;
+}
+
+@keyframes walkman-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .walkman__reel {
+    animation: none;
+  }
+}

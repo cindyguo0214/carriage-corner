@@ -71,7 +71,8 @@ export interface AppState {
   ride: { line: LineId; boardedAt: number; fromIdx: number; toIdx?: number; endedAt?: number; seat?: SpotId; roomId: string; coRiders: number } | null;
   /** 自己最近一次寫在車窗上的話（可選擇印在車票上，不進公開連結） */
   myNote: string | null;
-  ui: { mixerOpen: boolean; composerOpen: boolean; ticketOpen: boolean; glowMenu: GlowMenu | null; noteMenu: NoteMenu | null };
+  /** walkman：聽音樂時的隨身聽面板展開著（收起來時只剩小膠囊） */
+  ui: { mixerOpen: boolean; composerOpen: boolean; ticketOpen: boolean; walkman: boolean; glowMenu: GlowMenu | null; noteMenu: NoteMenu | null };
 }
 
 const params = new URLSearchParams(location.search);
@@ -111,7 +112,7 @@ export const store = createStore<AppState>(() => ({
   yielded: { count: 0, to: null },
   ride: null,
   myNote: null,
-  ui: { mixerOpen: false, composerOpen: false, ticketOpen: false, glowMenu: null, noteMenu: null },
+  ui: { mixerOpen: false, composerOpen: false, ticketOpen: false, walkman: true, glowMenu: null, noteMenu: null },
 }));
 
 export const useApp = <T,>(selector: (s: AppState) => T) => useStore(store, selector);

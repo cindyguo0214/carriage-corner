@@ -15,6 +15,8 @@ export interface GameApi {
   alight(): void;
   /** 走到相鄰車廂 */
   moveCar(dir: -1 | 1): void;
+  /** 自己頭上浮出一個小圖示，持續 ms 毫秒 */
+  popSelf(text: string, ms?: number): void;
   /** 連線時可取得簽章分享連結；離線回傳 null */
   signTicket(stats: TicketStats): Promise<string | null>;
 }
