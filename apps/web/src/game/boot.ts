@@ -40,8 +40,14 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
 
   // ── 月台 ──
   // 換場景時都有載入畫面蓋著，所以不另外交叉淡化
-  const goPlatform = (station: number, docked?: { leftMs: number; toward: number; fromDoor: number }, transition = false, via?: LineId) => {
-    const hooks = { board: (toward: number) => board(station, toward), transfer: (to: LineId) => void transfer(station, to) };
+  const goPlatform = (station: number, docked?: { leftMs: number; toward: number; fromDoor: number; train?: string }, transition = false, via?: LineId) => {
+    const here = lineId;
+    const hooks = {
+      board: (toward: number, train?: string) => board(station, toward, train),
+      transfer: (to: LineId) => void transfer(station, to),
+      // 連線時月台的列車跟伺服器同一班（docs/PRD.md 第 19 章）
+      nextTrain: net ? () => net.nextArrival(here, station) : undefined,
+    };
     stage.show(new PlatformScene({ lineId, station, docked, via }, hooks), transition);
     store.setState({ selfState: 'idle', pomodoro: null, ui: { ...store.getState().ui, glowMenu: null, noteMenu: null, composerOpen: false } });
   };
@@ -72,12 +78,12 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
   };
 
   // ── 上車 ──
-  const board = async (station: number, toward: number): Promise<boolean> => {
+  const board = async (station: number, toward: number, train?: string): Promise<boolean> => {
     const s = store.getState();
     const snapshot = net
       ? await loading.during(
         '列車即將出發',
-        net.board({ line: lineId, name: s.name, gender: s.gender, avatar: s.avatar, passCard: s.passCard }),
+        net.board({ line: lineId, name: s.name, gender: s.gender, avatar: s.avatar, passCard: s.passCard, ...(train ? { station, train } : {}) }),
         { lineColor: line.color },
       )
       : await loading.during('列車即將出發', Promise.resolve(null), { lineColor: line.color });
@@ -119,7 +125,7 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
         const x = seatX(scene.selfSeat) + 32;
         const fromDoor = Math.abs(x - (DOORS[0].x + DOORS[0].w / 2)) < Math.abs(x - (DOORS[1].x + DOORS[1].w / 2)) ? 0 : 1;
         store.setState(st => (st.ride ? { ride: { ...st.ride, toIdx: station, endedAt: Date.now(), seat: scene.selfSeat } } : {}));
-        goPlatform(station, { leftMs: train.dwellLeft(Date.now()), toward, fromDoor });
+        goPlatform(station, { leftMs: train.dwellLeft(Date.now()), toward, fromDoor, train: net ? scene.trainId : undefined });
         actions.say(`${line.stations[station].zh}到了，路上小心。｜Welcome to ${line.stations[station].en}.`);
       } finally {
         busy = false;

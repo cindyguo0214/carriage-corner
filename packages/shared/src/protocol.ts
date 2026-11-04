@@ -50,7 +50,8 @@ export interface WindowNote {
 }
 
 /** CARE：留言含自傷字詞，不廣播，改在本人畫面溫柔顯示求助資源（docs/PRD.md §7.7） */
-export type AckCode = 'BAD_REQUEST' | 'RATE_LIMITED' | 'FILTERED' | 'NO_TARGET' | 'NOTES_PAUSED' | 'CARE';
+/** MISSED：要搭的那班車已經關門開走（或還沒進站） */
+export type AckCode = 'BAD_REQUEST' | 'RATE_LIMITED' | 'FILTERED' | 'NO_TARGET' | 'NOTES_PAUSED' | 'CARE' | 'MISSED';
 
 export type Ack<T = undefined> =
   | ({ ok: true } & (T extends undefined ? {} : { data: T }))
@@ -67,14 +68,32 @@ export interface BoardedSnapshot {
   notes: WindowNote[];
 }
 
+/** 月台上下一班停靠這站的列車（docs/PRD.md 第 19 章）；時間為伺服器時鐘 */
+export interface PlatformArrival {
+  /** 列車編號；預定加開、還沒開出的列車也先給編號 */
+  train: string;
+  arriveAt: number;
+  /** 關門離站的時間 */
+  departAt: number;
+  /** 離站後的方向：1 往最後一站、-1 往第一站 */
+  dir: 1 | -1;
+}
+
 export interface ClientToServer {
+  /**
+   * 上車。帶 station 與 train（來自 platform:next）時，只會坐進那班正停在這站的列車；
+   * 不帶時（斷線重連）照舊分流到這條線最熱絡的車廂。
+   */
   board: (
     req: {
       sid: string; resumeToken: string | null; line: LineId;
       name: string; gender: Gender; avatar: AvatarId; passCard: PassCardId;
+      station?: number; train?: string;
     },
     ack: (res: Ack<BoardedSnapshot>) => void,
   ) => void;
+  /** 月台上：下一班停靠這站的列車 */
+  'platform:next': (req: { line: LineId; station: number }, ack: (res: Ack<PlatformArrival>) => void) => void;
   /** 停站開門時下車回到月台 */
   alight: (req: {}, ack: (res: Ack) => void) => void;
   /** 換到同一節車廂的空位，或站到走道上拉吊環 */

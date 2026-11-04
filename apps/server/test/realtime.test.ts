@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { after, afterEach, before, describe, it } from 'node:test';
 import { io as connect, type Socket } from 'socket.io-client';
-import type { BoardedSnapshot, ClientToServer, LineId, ServerToClient } from '@cc/shared';
+import type { BoardedSnapshot, ClientToServer, LineId, PlatformArrival, ServerToClient } from '@cc/shared';
 import { createRealtimeServer, type RealtimeServer } from '../src/app';
 import type { Config } from '../src/config';
 
@@ -13,6 +13,8 @@ const cfg: Config = {
   webOrigin: '*',
   runSec: [0.6, 0.6],
   dwellSec: 0.4,
+  platformWaitSec: 0.5,
+  platformLeadSec: [0.6, 0.6],
   graceSec: 0.05,
   noteTtlSec: 60,
   npcWarmth: 4,
@@ -279,6 +281,64 @@ describe('realtime server', () => {
       sid: a.sid, resumeToken: null, line: 'SK', name: '小安', gender: 'f', avatar: 'office', passCard: 'tile',
     });
     assert.ok(again.ok);
+  });
+
+  describe('從月台上車（docs/PRD.md 第 19 章）', () => {
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+    const next = async (c: Client, line: LineId, station: number) => {
+      const res = await c.timeout(2000).emitWithAck('platform:next', { line, station });
+      assert.ok(res.ok, JSON.stringify(res));
+      return (res as { data: PlatformArrival }).data;
+    };
+    const boardAt = (c: Client, line: LineId, station: number, train: string) =>
+      c.timeout(2000).emitWithAck('board', {
+        sid: `test-sid-${++sidSeq}-xxxx`, resumeToken: null, line, name: '小安', gender: 'f', avatar: 'office', passCard: 'tile', station, train,
+      });
+
+    it('沒有列車會來時預定從這站加開一班；進站前上不了車，開門後上車就停在這一站', async () => {
+      const a = open();
+      const arrival = await next(a, 'RV', 3);
+      assert.ok(arrival.arriveAt > Date.now());
+      assert.equal(arrival.departAt - arrival.arriveAt, cfg.dwellSec * 1000);
+      assert.deepEqual(await boardAt(a, 'RV', 3, arrival.train), { ok: false, code: 'MISSED' });
+
+      // 同一站的人等的是同一班
+      const b = open();
+      assert.equal((await next(b, 'RV', 3)).train, arrival.train);
+
+      await sleep(arrival.arriveAt - Date.now() + 30);
+      const ra = await boardAt(a, 'RV', 3, arrival.train);
+      assert.ok(ra.ok, JSON.stringify(ra));
+      const snap = (ra as { data: BoardedSnapshot }).data;
+      assert.equal(snap.room.train, arrival.train);
+      assert.equal(snap.train.to, 'RV04');
+      assert.ok(snap.train.arriveAt <= Date.now());
+
+      const rb = await boardAt(b, 'RV', 3, arrival.train);
+      assert.ok(rb.ok);
+      assert.equal((rb as { data: BoardedSnapshot }).data.room.id, snap.room.id);
+    });
+
+    it('現有列車很快會停靠這站時，等的就是那一班', async () => {
+      const rider = await board('CX');
+      const station = Number(rider.snap.train.to.slice(2)) - 1;
+      const arrival = await next(open(), 'CX', station);
+      assert.equal(arrival.train, rider.snap.room.train);
+      assert.equal(arrival.arriveAt, rider.snap.train.arriveAt);
+    });
+
+    it('車門關上開走之後就搭不上了', async () => {
+      const a = open();
+      const arrival = await next(a, 'SK', 0);
+      assert.equal(arrival.dir, 1);
+      await sleep(arrival.departAt - Date.now() + 2100);
+      assert.deepEqual(await boardAt(a, 'SK', 0, arrival.train), { ok: false, code: 'MISSED' });
+    });
+
+    it('車站超出路線範圍時拒絕', async () => {
+      const res = await open().timeout(2000).emitWithAck('platform:next', { line: 'CX', station: 7 });
+      assert.deepEqual(res, { ok: false, code: 'BAD_REQUEST' });
+    });
   });
 
   it('拒絕格式錯誤的請求', async () => {
