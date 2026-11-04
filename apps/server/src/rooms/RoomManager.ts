@@ -1,6 +1,6 @@
 // 車廂分流（docs/PRD.md §7.4、第 19 章）：先求不冷清，再求低密度，最後才加開列車
 // 從月台上車時只會坐進「正停在那一站」的列車：現有列車很快會到就等它，否則從這站加開一班。
-import { HARD_CAP, LINES, SOFT_CAP, type LineId, type PlatformArrival } from '@cc/shared';
+import { HARD_CAP, LINES, SOFT_CAP, STAND_CAP, type LineId, type PlatformArrival } from '@cc/shared';
 import type { Config } from '../config';
 import type { Emit, Room } from './Room';
 import { TrainRun } from './TrainRun';
@@ -64,7 +64,8 @@ export class RoomManager {
     if (run) {
       const stop = run.stopAt(station);
       if (run.line.id !== line || run.phase !== 'dwell' || !stop || now > stop.departAt + LATE_MS) return null;
-      return pickCar(run.cars) ?? null;
+      // 這班車的座位都坐滿了：站上車拉吊環（§24.2），不讓人在月台上錯過車
+      return pickCar(run.cars) ?? standingCar(run.cars) ?? null;
     }
     const plan = this.plans.get(train);
     if (!plan || plan.line !== line || plan.station !== station) return null;
@@ -110,6 +111,11 @@ export class RoomManager {
 function pickCar(cars: Room[]): Room | undefined {
   const cozy = cars.filter(r => r.realCount < SOFT_CAP).sort((a, b) => b.realCount - a.realCount)[0];
   return cozy ?? cars.filter(r => r.realCount < HARD_CAP).sort((a, b) => a.realCount - b.realCount)[0];
+}
+
+/** 座位都滿了：挑還有站位的車廂裡人最少的那節 */
+function standingCar(cars: Room[]): Room | undefined {
+  return cars.filter(r => r.realCount < STAND_CAP && r.hasRoomForHuman).sort((a, b) => a.realCount - b.realCount)[0];
 }
 
 function middleCar(run: TrainRun) {

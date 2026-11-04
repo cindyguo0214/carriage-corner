@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   CARS, isBigStation, isStand, NEAR_PRIORITY_COLUMNS, npcIdentity, PAX_STATES, pickSeat, PRIORITY_SEATS, SPECIAL_KINDS, SPECIAL_STANDS,
-  specialIdentity, spotColumn, STANDS,
+  specialIdentity, spotColumn, SPOTS, STANDS,
   type AvatarId, type BoardedSnapshot, type Gender, type Mode, type Passenger,
   type PaxState, type SpecialKind, type SpotId, type ServerToClient, type WindowNote,
 } from '@cc/shared';
@@ -72,6 +72,14 @@ export class Room {
     return n;
   }
 
+  /** 還能再進一位真人：有空的座位或站位，或有一般 NPC 可以讓出來（長者、家長不請走） */
+  get hasRoomForHuman() {
+    return SPOTS.some(s => {
+      const p = [...this.pax.values()].find(x => x.seat === s);
+      return !p || (p.npc && !p.special);
+    });
+  }
+
   snapshotFor(pax: ServerPax, resumeToken: string): BoardedSnapshot {
     return {
       serverTime: Date.now(),
@@ -84,7 +92,11 @@ export class Room {
     };
   }
 
-  /** 真人就座；若 12 個位子都滿了，先請一位 NPC 走到隔壁車廂。帶入 moving 時是從別節車廂走過來的同一位乘客 */
+  /**
+   * 真人就座；若 12 個位子都滿了，先請一位坐著的 NPC 走到隔壁車廂。
+   * 座位都是真人時改站走道拉吊環（S1～S6）；站位也滿了就請一位站著的一般 NPC 讓出來。
+   * 帶入 moving 時是從別節車廂走過來的同一位乘客。
+   */
   seatHuman(sid: string, who: Identity, moving?: ServerPax): ServerPax {
     let seat: SpotId | null = pickSeat(this.takenSeats());
     if (!seat) {
@@ -97,6 +109,14 @@ export class Room {
     }
     // 座位全滿時站著
     seat ??= STANDS.find(s => this.isFree(s)) ?? null;
+    if (!seat) {
+      const npc = [...this.pax.values()].find(p => p.npc && !p.special && isStand(p.seat));
+      if (npc) {
+        this.pax.delete(npc.pid);
+        this.emit('pax:leave', { pid: npc.pid, reason: 'transfer' });
+        seat = npc.seat;
+      }
+    }
     if (!seat) throw new Error(`room ${this.id} is full`);
     const pax: ServerPax = moving
       ? { ...moving, seat }

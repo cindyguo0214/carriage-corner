@@ -4,7 +4,7 @@ import { Application, Container, Graphics, RenderTexture, Sprite, TextureStyle }
 import type { Mode } from '@cc/shared';
 import { store } from '../store';
 import type { Label } from './actor';
-import { buildCharacterAtlas, characterArtReady, type CharacterFrames } from './characters';
+import { buildCharacterAtlas, characterArtReady, destroyCharacterAtlas, type CharacterFrames } from './characters';
 import { NameLabels } from './labels';
 import { H, MIN_PW, PH, PORTRAIT_WORLD_Y, PW, W } from './layout';
 import { hexToNum } from './palette';
@@ -76,8 +76,8 @@ export class Stage {
       this.chars = buildCharacterAtlas(s.mode);
       this.scene?.setMode(s.mode, this.chars);
       this.applyColors();
-      // 下一幀才釋放舊貼圖，避免本幀仍在使用；所有角色 frame 共用同一個 atlas source
-      requestAnimationFrame(() => old.office.m.front[0].destroy(true));
+      // 下一幀才釋放舊貼圖，避免本幀仍在使用；真人與 NPC 的 frame 各自共用一個 atlas source
+      requestAnimationFrame(() => destroyCharacterAtlas(old));
     });
 
     this.app.ticker.add(ticker => this.tick(Math.min(0.1, ticker.deltaMS / 1000)));

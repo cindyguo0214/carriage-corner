@@ -75,7 +75,7 @@ export class Passengers {
   add(p: Passenger, fadeIn = true): Pax {
     const existing = this.get(p.pid);
     if (existing) return existing;
-    const actor = new Actor(p.pid, { name: p.name, gender: p.gender, avatar: p.avatar }, animOf(p.seat, p.state), viewOf(p.seat), seatX(p.seat), seatCellY(p.seat), fadeIn);
+    const actor = new Actor(p.pid, { name: p.name, gender: p.gender, avatar: p.avatar, npc: !!p.npc }, animOf(p.seat, p.state), viewOf(p.seat), seatX(p.seat), seatCellY(p.seat), fadeIn);
     (isStand(p.seat) ? this.standRow : p.seat[1] === 'A' ? this.backRow : this.frontRow).addChild(actor.sprite);
     const pax: Pax = {
       pid: p.pid, seat: p.seat, state: p.state, npc: !!p.npc, actor,
@@ -235,11 +235,12 @@ export class Passengers {
     const self = this.selfPid();
     for (const p of this.list) {
       const { x, y } = p.actor.headTop;
-      out.push({ id: p.pid, name: p.actor.look.name, x, y, alpha: p.actor.sprite.alpha, self: p.pid === self });
+      const mine = p.pid === self;
+      out.push({ id: p.pid, name: p.actor.look.name, x, y, alpha: p.actor.sprite.alpha, self: mine, who: mine ? undefined : p.npc ? 'npc' : 'real' });
     }
     for (const a of this.leaving) {
       const { x, y } = a.headTop;
-      out.push({ id: `${a.id}~`, name: a.look.name, x, y, alpha: a.sprite.alpha, self: false });
+      out.push({ id: `${a.id}~`, name: a.look.name, x, y, alpha: a.sprite.alpha, self: false, who: a.look.npc ? 'npc' : 'real' });
     }
   }
 

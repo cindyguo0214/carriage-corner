@@ -2,7 +2,7 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { z } from 'zod';
-import { FALLBACK_NAME, FORTUNES, HARD_CAP, SPOTS, tidyName, type ClientToServer, type ServerToClient } from '@cc/shared';
+import { FALLBACK_NAME, FORTUNES, SPOTS, STAND_CAP, tidyName, type ClientToServer, type ServerToClient } from '@cc/shared';
 import type { Config } from './config';
 import { Limiter } from './limiter';
 import { moderate, Moderation } from './moderation';
@@ -185,7 +185,8 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
       if (!req.success || !ctx) return ack(BAD);
       if (!limiter.take(`car:${ctx.pax.pid}`, 6, 60_000)) return ack(LIMITED);
       const next = ctx.room.run.carAt(ctx.room.car + req.data.dir);
-      if (!next || next.realCount >= HARD_CAP) return ack({ ok: false, code: 'NO_TARGET' });
+      // 走到隔壁：座位滿了就站走道；連站位都滿（STAND_CAP）才走不過去
+      if (!next || next.realCount >= STAND_CAP || !next.hasRoomForHuman) return ack({ ok: false, code: 'NO_TARGET' });
       const sid = socket.data.sid!;
       const moving = ctx.room.removeHuman(ctx.pax.pid)!;
       socket.to(ctx.room.id).emit('pax:leave', { pid: moving.pid, reason: 'transfer' });

@@ -47,6 +47,29 @@
   font-weight: 600;
 }
 
+/* 同車的真人（docs/PRD.md §24.1）：名字前亮著一盞暖色小燈，外圈一道細細的暖光 */
+.name-label--real {
+  box-shadow: 0 0 0 1px rgb(217 185 140 / 0.55);
+}
+
+.name-label--real::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 4px 1px 0;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--color-lamp);
+  box-shadow: 0 0 4px var(--color-lamp);
+}
+
+/* 系統乘客：標籤再淡一點，和偏淡的角色一致 */
+.name-label--npc {
+  background: rgb(30 28 36 / 0.4);
+  color: rgb(232 225 213 / 0.85);
+}
+
 /* 通道門指示牌：「❮ 第 2 車廂」「第 4 車廂 ❯」，輕輕往門的方向推 */
 .gangway-sign {
   pointer-events: auto;

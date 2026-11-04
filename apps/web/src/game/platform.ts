@@ -335,7 +335,7 @@ export class PlatformScene implements Scene {
 
   private addNpc(x: number, y: number, role: Role, spot: string | null, anim: 'idle' | 'stand' | 'walk', view: View = 'back') {
     const who = npcIdentity([this.me?.look.name, ...this.npcs.map(n => n.actor.look.name)].filter(Boolean) as string[]);
-    const actor = new Actor(`npc${Math.random().toString(36).slice(2, 8)}`, who, anim, view, cellX(x), y);
+    const actor = new Actor(`npc${Math.random().toString(36).slice(2, 8)}`, { ...who, npc: true }, anim, view, cellX(x), y);
     this.people.addChild(actor.sprite);
     const npc: Npc = { actor, role, spot };
     this.npcs.push(npc);
@@ -555,7 +555,7 @@ export class PlatformScene implements Scene {
   labels(out: Label[]) {
     const push = (a: Actor, self: boolean) => {
       const { x, y } = a.headTop;
-      out.push({ id: a.id, name: a.look.name, x, y, alpha: a.sprite.alpha, self });
+      out.push({ id: a.id, name: a.look.name, x, y, alpha: a.sprite.alpha, self, who: self ? undefined : 'npc' });
     };
     this.npcs.forEach(n => push(n.actor, false));
     push(this.me, true);

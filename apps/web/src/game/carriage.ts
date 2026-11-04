@@ -213,6 +213,7 @@ export class CarriageScene implements Scene {
     if (p.npc || p.pid === this.selfPid || this.riders.has(p.pid)) return;
     this.riders.add(p.pid);
     store.setState(s => (s.ride ? { ride: { ...s.ride, coRiders: s.ride.coRiders + 1 } } : {}));
+    explainRealLamp();
   }
 
   private applyNote(n: WindowNote) {
@@ -924,6 +925,19 @@ function hash(s: string) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
+}
+
+const REAL_LAMP_HINT = 'cc.hint.realLamp';
+
+/** 第一次和真人同車：說明名字旁的小燈，之後不再提（只記在這台裝置） */
+function explainRealLamp() {
+  try {
+    if (localStorage.getItem(REAL_LAMP_HINT)) return;
+    localStorage.setItem(REAL_LAMP_HINT, '1');
+  } catch {
+    return; // 儲存被封鎖時不提示，免得每次都跳
+  }
+  actions.toast('名字旁亮著小燈的，是和你同車的真人。');
 }
 
 /** 收到互動的人看到的提示（只有自己看得到） */

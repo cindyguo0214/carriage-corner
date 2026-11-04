@@ -7,6 +7,8 @@ export interface Look {
   name: string;
   gender: Gender;
   avatar: AvatarId;
+  /** 系統 NPC：用偏淡的莫蘭迪色階畫（docs/PRD.md §24.1） */
+  npc?: boolean;
 }
 
 /** 名字標籤：world 座標，由 Stage 換算成螢幕位置 */
@@ -17,6 +19,8 @@ export interface Label {
   y: number;
   alpha: number;
   self: boolean;
+  /** 別人的名字：real 是同車的真人（名字旁亮一盞小燈），npc 是系統乘客（標籤略淡）（docs/PRD.md §24.1） */
+  who?: 'real' | 'npc';
   /** 互動時頭上浮起的字（嗶！、♪、📜） */
   pop?: boolean;
   /** 通道門、轉乘連通道的指示牌：靠左或靠右對齊、可以點；accent 是框線色（轉乘用目標路線色） */
@@ -146,7 +150,8 @@ export class Actor {
       this.step++;
     }
     if (frames) {
-      this.sprite.texture = frames[this.look.avatar][this.look.gender][this.view][FRAMES[this.anim][sequence(this.anim, this.step)]];
+      const tree = this.look.npc ? frames.pale : frames;
+      this.sprite.texture = tree[this.look.avatar][this.look.gender][this.view][FRAMES[this.anim][sequence(this.anim, this.step)]];
     }
   }
 }
