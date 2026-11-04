@@ -1,5 +1,5 @@
 // Low-Fi 莫蘭迪低飽和色票（docs/PRD.md §2.2）。正式版收斂為 48 色主調色盤 .gpl。
-import type { AvatarId, Gender, Mode } from '@cc/shared';
+import type { Mode } from '@cc/shared';
 
 export interface Palette {
   wall: string; wallShade: string; wallHi: string;
@@ -60,45 +60,6 @@ export const PALETTES: Record<Mode, Palette> = {
     neon: ['#C98BA0', '#7FA9A3', '#D4A373'],
   },
 };
-
-export interface Outfit { top: string; topLo: string; bottom: string; hair: string; acc: string }
-
-const OUTFITS: Record<AvatarId, Record<Gender, Outfit>> = {
-  office: {
-    m: { top: '#7E8A9A', topLo: '#687384', bottom: '#5E6470', hair: '#3D3836', acc: '#E4DED3' },
-    f: { top: '#A39AA8', topLo: '#8A8290', bottom: '#5E6470', hair: '#4A3E3A', acc: '#F1ECE3' },
-  },
-  student: {
-    m: { top: '#E4DED3', topLo: '#CBC4B8', bottom: '#6F7E8E', hair: '#2E2C30', acc: '#6F7E8E' },
-    f: { top: '#E4DED3', topLo: '#CBC4B8', bottom: '#7D6E80', hair: '#2E2C30', acc: '#B97A6F' },
-  },
-  hoodie: {
-    m: { top: '#A5928A', topLo: '#8E7C75', bottom: '#6B6A70', hair: '#5A4A42', acc: '#8E7C75' },
-    f: { top: '#C2A4A0', topLo: '#A88C88', bottom: '#6B6A70', hair: '#6A5040', acc: '#A88C88' },
-  },
-  headphone: {
-    m: { top: '#8FA595', topLo: '#788E7F', bottom: '#5F6568', hair: '#6A5548', acc: '#C98BA0' },
-    f: { top: '#D8C49A', topLo: '#BCA87E', bottom: '#5F6568', hair: '#3D3836', acc: '#7FA9A3' },
-  },
-  // 長者：灰髮、針織外套；acc 是阿公的鴨舌帽
-  elder: {
-    m: { top: '#8C9180', topLo: '#767B6B', bottom: '#5F6064', hair: '#BDB7B0', acc: '#6E6A64' },
-    f: { top: '#9A8494', topLo: '#82707E', bottom: '#6E6A70', hair: '#C9C3BC', acc: '#9A8494' },
-  },
-  // 家長：acc 是牽著的小朋友的上衣
-  parent: {
-    m: { top: '#7F98A6', topLo: '#68808E', bottom: '#5E6470', hair: '#3D3836', acc: '#E3C27A' },
-    f: { top: '#C49A8E', topLo: '#A9827A', bottom: '#5F6470', hair: '#4A3E3A', acc: '#E3C27A' },
-  },
-};
-
-/** 夜間把衣著壓暗一階（之後改為 Palette Swap Shader） */
-export function outfitFor(avatar: AvatarId, gender: Gender, mode: Mode): Outfit {
-  const o = OUTFITS[avatar][gender];
-  if (mode === 'morning') return o;
-  const d = (c: string) => shade(c, 0.72);
-  return { top: d(o.top), topLo: d(o.topLo), bottom: d(o.bottom), hair: d(o.hair), acc: d(o.acc) };
-}
 
 export function shade(hex: string, f: number): string {
   const n = parseInt(hex.slice(1), 16);

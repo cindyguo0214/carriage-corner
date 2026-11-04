@@ -78,7 +78,7 @@ export class Actor {
 
   /** 名字標籤的錨點：頭頂正上方 */
   get headTop() {
-    const top = this.anim === 'stand' || this.anim === 'walk' ? 1 : this.anim === 'hang' ? 5 : 7;
+    const top = this.anim === 'stand' || this.anim === 'walk' ? 3 : this.anim === 'hang' ? 1 : 7;
     return { x: this.sprite.x + 32, y: this.sprite.y + top };
   }
 
