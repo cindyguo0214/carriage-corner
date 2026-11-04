@@ -7,20 +7,22 @@ import { synthLofi, synthRail, synthRain } from './procedural';
 export type Channel = 'rail' | 'rain' | 'lofi'; // 使用者看到的三個推桿
 
 const LOOPS: Record<Channel, { make: (ctx: AudioContext) => AudioBuffer | Promise<AudioBuffer>; gain: number }> = {
-  rail: { make: synthRail, gain: 0.6 },
-  rain: { make: synthRain, gain: 0.45 },
-  lofi: { make: ctx => synthLofi(ctx.sampleRate), gain: 0.35 },
+  rail: { make: synthRail, gain: 0.42 },
+  rain: { make: synthRain, gain: 0.32 },
+  lofi: { make: ctx => synthLofi(ctx.sampleRate), gain: 0.25 },
 };
 
 // 鐵軌聲低通截止頻率：地下悶、高架亮——同一段素材演繹兩種空間
 const RAIL_CUTOFF = { underground: 700, elevated: 4500 } as const;
 
-const SFX_GAIN = 0.126; // ≈ -18 dBFS
+const SFX_GAIN = 0.089; // ≈ -21 dBFS
 const STORAGE_KEY = 'cc.mixer.v2';
 const MOOD_KEY = 'cc.mood.v1';
 /** 情境音樂的基準音量與切換時的淡入淡出秒數 */
-const MOOD_GAIN = 0.5;
+const MOOD_GAIN = 0.35;
 const MOOD_FADE_SEC = 1.5;
+/** 聽情境音樂時，鐵軌行駛聲壓到原本的這個比例，讓音樂在前面 */
+const RAIL_UNDER_MUSIC = 0.35;
 
 export interface MixerSettings {
   on: Record<Channel, boolean>;
@@ -113,8 +115,9 @@ export class AmbientMixer {
     this.moodSettings = { ...this.moodSettings, active };
     this.moodChanged();
     this.applyMood(MOOD_FADE_SEC);
-    // 情境音樂播放時，合成的 Lo-Fi 鋼琴先停，避免兩段音樂疊在一起
+    // 情境音樂播放時，合成的 Lo-Fi 鋼琴先停（避免兩段音樂疊在一起），鐵軌聲退到後面
     void this.apply('lofi', MOOD_FADE_SEC);
+    void this.apply('rail', MOOD_FADE_SEC);
   }
 
   /** ⚠️ 必須在使用者手勢（感應進站按鈕的 onClick）中呼叫，否則瀏覽器會擋下自動播放 */
@@ -346,7 +349,8 @@ export class AmbientMixer {
     if (!this.settings.on[ch]) return 0;
     if (ch === 'lofi' && this.moodSettings.active) return 0;
     const duck = ch === 'lofi' && this.ducked ? 0.4 : 1;
-    return LOOPS[ch].gain * this.settings.level[ch] * duck;
+    const under = ch === 'rail' && this.moodSettings.active ? RAIL_UNDER_MUSIC : 1;
+    return LOOPS[ch].gain * this.settings.level[ch] * duck * under;
   }
 
   private duck(ms: number) {

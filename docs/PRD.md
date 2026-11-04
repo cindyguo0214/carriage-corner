@@ -467,7 +467,7 @@ flowchart LR
 | 節奏 | 每音 150 ms、間隔 30 ms，共 8 音（約 1.4 秒） |
 | 音色 | 三角波，經 2.5 kHz 低通柔化，比一般提示音更圓潤 |
 | 包絡 | 每音 5 ms 起音／釋音，避免爆音 |
-| 音量 | 約 -18 dBFS，播放時 Lo-Fi 同步壓低 |
+| 音量 | 約 -21 dBFS，播放時 Lo-Fi 同步壓低 |
 | 驗收 | **只依本表參數製作，不以官方錄音作為參考樣本**；完成後由非開發成員盲聽比對，確認可與官方提示音清楚區辨 |
 
 **② 車廂環境音（CC0 素材＋低通濾鏡）**
@@ -1419,7 +1419,7 @@ flowchart LR
     R["CC0 鐵軌循環<br/>AudioBufferSource"] --> RB["rail Bus"] --> LP["低通濾鏡<br/>地下 700 Hz ⇄ 高架 4.5 kHz"] --> M["Master"]
     RA["雨聲循環"] --> RAB["rain Bus"] --> HP["高通 120 Hz"] --> M
     L["Lo-Fi 循環"] --> LB["lofi Bus<br/>（可 ducking）"] --> M
-    O["OscillatorNode<br/>800／1000／1200 Hz"] --> ST["低通 2.5 kHz 柔化"] --> SB["sfx Bus<br/>約 -18 dBFS"] --> M
+    O["OscillatorNode<br/>800／1000／1200 Hz"] --> ST["低通 2.5 kHz 柔化"] --> SB["sfx Bus<br/>約 -21 dBFS"] --> M
     A["原創配音／TTS 音檔"] --> AB["announce Bus"] --> SP["喇叭濾鏡<br/>高通 300 Hz → 低通 3.4 kHz → 輕微飽和"] --> M
     M --> D["喇叭／耳機"]
 ```
@@ -1439,7 +1439,7 @@ const LOOPS: Record<Channel, { base: string; gain: number }> = {
 // 鐵軌聲低通截止頻率：地下悶、高架亮——同一段素材演繹兩種空間
 const RAIL_CUTOFF = { underground: 700, elevated: 4500 } as const;
 
-const SFX_GAIN = 0.126; // ≈ -18 dBFS
+const SFX_GAIN = 0.089; // ≈ -21 dBFS
 const STORAGE_KEY = 'cc.mixer.v2';
 
 export class AmbientMixer {
@@ -2386,7 +2386,9 @@ flowchart LR
   - 主音量同時影響情境音樂。播放關門警示音等提示音時，情境音樂和 Lo-Fi 一起壓低。
 - **和環境音的關係**：
   - 情境音樂獨立於鐵軌行駛聲與車窗雨聲，兩者可以自由疊加。
+  - 聽情境音樂時，鐵軌行駛聲會在 1.5 秒內壓到原本的 35%，讓音樂在前面；停止聽之後恢復。
   - 合成的 Lo-Fi 鋼琴是另一段音樂，聽情境音樂時先靜音，避免兩段音樂疊在一起；停止聽之後恢復原本設定。
   - 「聽音樂」不再自動打開 Lo-Fi 和音效面板。
 - **偏好**：選的情境與音量存在本機 `localStorage`（`cc.mood.v1`），下次就座、聽音樂時自動套用。
+- **整體音量**（v1.9 一併調低約 3 dB）：鐵軌 0.42、雨聲 0.32、Lo-Fi 0.25、提示音 0.089（約 -21 dBFS），情境音樂 0.35（皆再乘上各自推桿與主音量）。
 - **iOS**：第一次播放必須在點擊手勢裡。切到聽音樂的點擊會同步觸發播放，所以符合這個限制。
