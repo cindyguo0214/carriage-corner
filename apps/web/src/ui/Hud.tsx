@@ -231,8 +231,15 @@ function BottomBar() {
   const mixerOpen = useApp(s => s.ui.mixerOpen);
   return (
     <div className="relative flex flex-col items-center">
-      {mixerOpen && <MixerPanel />}
-      {scene === 'platform' ? <PlatformBar /> : <CarriageBar />}
+      {mixerOpen && (
+        <>
+          {/* 點畫面其他地方就收起；這一下不會穿透到遊戲畫面（不會順便走路或點到人） */}
+          <div className="pointer-events-auto fixed inset-0" aria-hidden onClick={() => actions.setUi({ mixerOpen: false })} />
+          <MixerPanel />
+        </>
+      )}
+      {/* 疊在透明遮罩上面：開著面板時底部按鈕照樣能按 */}
+      <div className="relative">{scene === 'platform' ? <PlatformBar /> : <CarriageBar />}</div>
     </div>
   );
 }
@@ -410,11 +417,18 @@ function DndToggle() {
   const dnd = useApp(s => s.dnd);
   return (
     <button
-      aria-pressed={dnd}
+      role="switch"
+      aria-checked={dnd}
       onClick={() => store.setState({ dnd: !dnd })}
-      className={`mt-3 w-full rounded px-2 py-1 text-left ${dnd ? theme.chipOn : theme.chip}`}
+      className={`mt-3 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left ${dnd ? theme.chipOn : theme.chip}`}
     >
-      🔕 勿擾：{dnd ? '不接收別人的微光' : '關閉'}
+      <span className="text-base leading-none" aria-hidden>{dnd ? '🔕' : '🔔'}</span>
+      <span className="flex flex-1 flex-col">
+        <span className="font-medium">勿擾模式：{dnd ? '開啟' : '關閉'}</span>
+        <span className="text-[11px] leading-snug opacity-75">
+          {dnd ? '別人的嗶卡、同頻、小毯、幸運籤都不會打擾你' : '會收到別人的嗶卡、同頻、小毯、幸運籤'}
+        </span>
+      </span>
     </button>
   );
 }

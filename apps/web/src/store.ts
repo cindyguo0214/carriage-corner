@@ -51,7 +51,7 @@ export interface AppState {
   selfPid: string | null;
   selfSeat: SpotId | null;
   selfState: PaxState;
-  /** 勿擾：不接收別人送的微光 */
+  /** 勿擾：不接收別人送的四種互動（嗶卡、同頻、小毯、幸運籤） */
   dnd: boolean;
   /** 只有自己看得到的輕提示（例如有人點頭） */
   toast: { text: string; at: number } | null;
