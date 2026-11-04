@@ -4,10 +4,13 @@ import tailwindcss from '@tailwindcss/vite';
 
 // `vite build --mode artifact`：發布成 claude.ai Artifact 用的靜態版（相對路徑、離線模式），
 // 輸出到 dist-artifact/，再由 scripts/artifact-page.mjs 轉成 Artifact 頁面格式。
+// `vite build --mode pages`：GitHub Pages 正式網址的靜態版（相對路徑、離線模式），輸出到 dist-pages/。
+const STATIC_OUT: Record<string, string> = { artifact: 'dist-artifact', pages: 'dist-pages' };
+
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
-  base: mode === 'artifact' ? './' : '/',
-  build: { outDir: mode === 'artifact' ? 'dist-artifact' : 'dist' },
+  base: STATIC_OUT[mode] ? './' : '/',
+  build: { outDir: STATIC_OUT[mode] ?? 'dist' },
   server: {
     host: '127.0.0.1',
     port: 5188,

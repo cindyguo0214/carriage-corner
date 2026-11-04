@@ -1,0 +1,50 @@
+# 推到 main 時：把離線靜態版部署到 GitHub Pages（正式網址，車票 QR Code 指向這裡）
+# 需要先在 repo 的 Settings → Pages 把 Source 設成「GitHub Actions」
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只跑一個部署，新的推送不取消正在進行的部署
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安裝相依套件
+        run: npm ci
+
+      - name: 建置 Pages 版
+        run: npm run build:pages -w @cc/web
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist-pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

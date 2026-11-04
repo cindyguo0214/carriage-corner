@@ -10,8 +10,8 @@ import { loading } from './ui/loading';
 // 玩家在閘門選路線、選卡面的這幾秒，背景先把場景與 HUD 模組載好（docs/PRD.md §6.5）
 const gameModule = import('./game/boot');
 const hudModule = import('./ui/mountHud');
-// Artifact 靜態版沒有即時伺服器：不嘗試連線，直接用離線模式，進站不必等逾時
-const REALTIME = import.meta.env.VITE_TARGET !== 'artifact';
+// Artifact 與 GitHub Pages 靜態版沒有即時伺服器：不嘗試連線，直接用離線模式，進站不必等逾時
+const REALTIME = import.meta.env.VITE_TARGET !== 'artifact' && import.meta.env.VITE_TARGET !== 'pages';
 const netModule = REALTIME ? import('./net/session') : null;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;

@@ -4,23 +4,58 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5188,
       "url": "http://127.0.0.1:5188"
     },
     {
       "name": "artifact-build",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "preview", "--outDir", "dist-artifact", "--host", "127.0.0.1", "--port", "5190", "--strictPort", "apps/web"],
+      "runtimeArgs": [
+        "vite",
+        "preview",
+        "--outDir",
+        "dist-artifact",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5190",
+        "--strictPort",
+        "apps/web"
+      ],
       "port": 5190,
       "url": "http://127.0.0.1:5190"
     },
     {
       "name": "web-only",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:web"],
+      "runtimeArgs": [
+        "run",
+        "dev:web"
+      ],
       "port": 5188,
       "url": "http://127.0.0.1:5188"
+    },
+    {
+      "name": "pages-build",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "preview",
+        "--outDir",
+        "dist-pages",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5191",
+        "--strictPort",
+        "apps/web"
+      ],
+      "port": 5191,
+      "url": "http://127.0.0.1:5191"
     }
   ]
 }

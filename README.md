@@ -123,7 +123,7 @@ GitHub Actions（`.github/workflows/ci.yml`）在每個 PR 與推到 main 時，
 已發布為私人 Artifact：<https://claude.ai/artifact/MvHWPjv9DZm9oebKQpfKok>（在 Claude App 或 claude.ai 都能開）。
 
 - Artifact 沒有即時伺服器，所以是**離線單機版**：車廂裡的乘客是本機模擬，沒有多人同車
-- 車票用 Artifact 的 `downloads` 能力存檔（iOS Claude App 會打開系統分享表單），QR Code 指向這個 Artifact
+- 車票用 Artifact 的 `downloads` 能力存檔（iOS Claude App 會打開系統分享表單），QR Code 指向發佈後的正式網址（GitHub Pages，見下節），不是 Artifact 連結
 - 目前只有你看得到；要給別人玩，從頁面的 Share 選單分享
 
 更新方式：
@@ -133,6 +133,15 @@ npm run build:artifact
 ```
 
 產出在 `apps/web/dist-artifact/`（`page.html` 是 Artifact 頁面、`assets/` 是程式檔），再請 Claude 發布到同一個 Artifact 網址。
+
+## 正式網址（GitHub Pages 單機版）
+
+正式網址：<https://cindyguo0214.github.io/carriage-corner/>。車票 QR Code 與分享文案都指向這裡，並帶上 `?line=` 預選同一條線。
+
+- 推到 main 時，`.github/workflows/pages.yml` 會建置離線靜態版（`npm run build:pages -w @cc/web`，產出在 `apps/web/dist-pages/`），再部署到 GitHub Pages
+- 和 Artifact 版一樣是**離線單機版**，沒有即時伺服器
+- **第一次要手動開啟**：到 repo 的 Settings → Pages，把 Source 設成「GitHub Actions」。私人 repo 的 Pages 需要 GitHub Pro／Team 方案；免費方案要把 repo 改成公開才能開
+- 正式網址換成自己的網域時，改 `apps/web/.env.pages` 與 `apps/web/.env.artifact` 的 `VITE_SHARE_URL`
 
 ## 結構
 
