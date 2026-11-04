@@ -1,7 +1,7 @@
 // DOM 疊層：中文輸入、清晰文字與無障礙都在這裡處理，不畫進 canvas（docs/PRD.md §6.2）
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  LINES, looksLikeContact, NOTE_MAX_GRAPHEMES, splitGraphemes, type PaxState,
+  hasDeniedWord, LINES, looksLikeContact, needsCare, NOTE_MAX_GRAPHEMES, splitGraphemes, type PaxState,
 } from '@cc/shared';
 import { mixer, type Channel } from '../audio/AmbientMixer';
 import { bridge } from '../gameBridge';
@@ -483,7 +483,9 @@ function NoteComposer() {
   const submit = async () => {
     const t = text.trim();
     if (!t || sending || !bridge.game) return;
-    if (looksLikeContact(t)) {
+    // 自傷字詞先在本機攔下：不送出、不上車窗，只顯示求助資源（離線模式沒有伺服器把關，也靠這一層）
+    if (needsCare(t)) return setCare(true);
+    if (looksLikeContact(t) || hasDeniedWord(t)) {
       setError(NOTE_ERRORS.FILTERED);
       return;
     }
