@@ -3,8 +3,14 @@ import { CanvasSource, type Texture } from 'pixi.js';
 import { AVATARS, SPECIAL_KINDS, type AvatarId, type Gender, type Mode, type PaxState } from '@cc/shared';
 import { atlasFrames, makeCanvas, mix, Painter } from './paint';
 import { outfitFor, PALETTES, shade, type Outfit, type Palette } from './palette';
+import headphonesFemaleUrl from '../assets/characters/commuter-headphones-female.png';
+import headphonesMaleUrl from '../assets/characters/commuter-headphones-male.png';
+import hoodieFemaleUrl from '../assets/characters/commuter-hoodie-female.png';
+import hoodieMaleUrl from '../assets/characters/commuter-hoodie-male.png';
 import officeFemaleUrl from '../assets/characters/commuter-office-female.png';
 import officeMaleUrl from '../assets/characters/commuter-office-male.png';
+import studentFemaleUrl from '../assets/characters/commuter-student-female.png';
+import studentMaleUrl from '../assets/characters/commuter-student-male.png';
 
 export const CELL = 64;
 export type View = 'front' | 'back';
@@ -66,9 +72,12 @@ export function buildCharacterAtlas(mode: Mode): CharacterFrames {
   return out;
 }
 
-/** 角色設定頁的全身預覽圖（64×64，頭頂第 4 列、腳底第 61 列；目前有上班族，其他穿搭還沒畫） */
+/** 角色設定頁的全身預覽圖（64×64，頭頂第 4 列、腳底第 61 列；四套穿搭男女同一個位置，切換時像在原地換衣服） */
 const PREVIEW_ART: Partial<Record<AvatarId, Record<Gender, HTMLImageElement>>> = {
   office: { f: loadImage(officeFemaleUrl), m: loadImage(officeMaleUrl) },
+  student: { f: loadImage(studentFemaleUrl), m: loadImage(studentMaleUrl) },
+  hoodie: { f: loadImage(hoodieFemaleUrl), m: loadImage(hoodieMaleUrl) },
+  headphone: { f: loadImage(headphonesFemaleUrl), m: loadImage(headphonesMaleUrl) },
 };
 /** 預覽圖都載好（載不到也算完成，會改用程式畫的角色） */
 export const previewArtReady = Promise.all(
