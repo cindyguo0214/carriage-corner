@@ -28,41 +28,97 @@
         background: radial-gradient(120% 90% at 50% 0%, #4a4756 0%, var(--night) 70%); z-index: 10;
         transition: opacity .6s ease, visibility .6s; }
       .gate--leaving { opacity: 0; visibility: hidden; }
-      .gate__card { width: min(440px, 100%); background: var(--oat); border-radius: 6px; padding: 24px 22px 20px;
-        box-shadow: 0 0 0 4px #d6cdbe, 0 18px 40px rgba(0,0,0,.35); image-rendering: pixelated; }
-      .brand { display: flex; align-items: center; gap: 8px; font-size: 13px; letter-spacing: .08em; color: #6b6660; }
-      .brand svg { width: 24px; height: 24px; image-rendering: pixelated; }
-      h1 { margin: 14px 0 2px; font-size: 30px; letter-spacing: .4em; text-align: center; }
-      .sub { text-align: center; margin: 0 0 18px; font-size: 13px; letter-spacing: .2em; color: #7d776f; }
-      .q { font-size: 13px; margin: 14px 0 8px; color: #6b6660; }
-      .opts { display: flex; flex-wrap: wrap; gap: 8px; }
-      .opt { appearance: none; border: 2px solid #cfc6b8; background: #f1ece3; color: var(--ink); border-radius: 4px;
-        padding: 8px 10px; font: inherit; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-      .opt[aria-pressed="true"] { border-color: var(--ink); background: #fffaf1; }
+      /* 閘門卡片：米色紙票、像素階梯圓角（docs/PRD.md §16.2、第 21 章） */
+      .gate__card { position: relative; width: min(440px, 100%); background: #f3ece1; padding: 18px 18px 16px; margin: auto;
+        box-shadow: 0 0 0 3px #d8cab4, 0 0 0 6px #ebe2d4, 0 0 0 8px #c9b99f, 0 18px 40px rgba(0,0,0,.35);
+        clip-path: polygon(0 6px, 3px 6px, 3px 3px, 6px 3px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 3px, calc(100% - 3px) 3px, calc(100% - 3px) 6px, 100% 6px,
+          100% calc(100% - 6px), calc(100% - 3px) calc(100% - 6px), calc(100% - 3px) calc(100% - 3px), calc(100% - 6px) calc(100% - 3px), calc(100% - 6px) 100%,
+          6px 100%, 6px calc(100% - 3px), 3px calc(100% - 3px), 3px calc(100% - 6px), 0 calc(100% - 6px)); }
+      .gate__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .brand { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; letter-spacing: .08em; color: var(--ink); }
+      .brand svg { width: 26px; height: 26px; image-rendering: pixelated; }
+      .gate__tag { padding-left: 10px; border-left: 2px solid #cdbfa9; font-size: 13px; font-weight: 700; letter-spacing: .12em; color: var(--ink); }
+      h1 { margin: 12px 0 0; font-size: 34px; font-weight: 800; letter-spacing: .32em; text-indent: .32em; text-align: center; }
+      .sub { text-align: center; margin: 2px 0 14px; font-size: 12px; letter-spacing: .42em; text-indent: .42em; color: #6b6660; }
+      /* 步驟條：①設定角色 ── ②選擇路線 */
+      .stepper { list-style: none; display: flex; align-items: center; margin: 0 auto 14px; padding: 0; max-width: 340px; }
+      .stepper__line { flex: 1; height: 3px; background: #cdbfa9; margin: 0 -2px; }
+      .stepper__btn { display: inline-flex; align-items: center; gap: 8px; padding: 3px 14px 3px 3px; border-radius: 999px; border: 2px solid #d8cab4;
+        background: #f6f1e8; color: #6b6660; font: inherit; font-size: 14px; font-weight: 700; letter-spacing: .12em; white-space: nowrap; }
+      button.stepper__btn { cursor: pointer; }
+      .stepper__num { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #cdbfa9; background: #f6f1e8;
+        color: #8b857d; font-size: 15px; letter-spacing: 0; }
+      .gate__card[data-step="1"] .stepper__item[data-n="1"] .stepper__btn,
+      .gate__card[data-step="2"] .stepper__item[data-n="2"] .stepper__btn { background: #f6dcbc; border-color: #f6dcbc; color: var(--ink); }
+      .gate__card[data-step="1"] .stepper__item[data-n="1"] .stepper__num,
+      .gate__card[data-step="2"] .stepper__item[data-n="2"] .stepper__num { background: #c8946a; border-color: #b07c55; color: #fff7ec; }
+      .gate__card[data-step="2"] .stepper__item[data-n="1"] .stepper__num { background: #e7d7c1; color: var(--ink); }
+      .stepper__btn:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
+      /* 角色預覽：一張撕線車票，左邊是名字與像素角色，右邊是天際線與列車 */
+      .preview { position: relative; display: grid; grid-template-columns: 100px 1fr; min-height: 124px; margin: 0 0 14px; background: #f8f3ea;
+        border: 2px solid #cdbfa9; border-radius: 4px; }
+      .preview::before, .preview::after { content: ''; position: absolute; top: 50%; width: 14px; height: 22px; margin-top: -11px; background: #f3ece1; border: 2px solid #cdbfa9; }
+      .preview::before { left: -2px; border-left: 0; border-radius: 0 11px 11px 0; }
+      .preview::after { right: -2px; border-right: 0; border-radius: 11px 0 0 11px; }
+      .preview__stub { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding: 6px 4px 6px 12px; border-right: 2px dashed #cdbfa9; }
+      .preview__name { font-size: 15px; font-weight: 700; letter-spacing: .1em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .preview__name--empty { color: #a39c93; font-weight: 400; font-size: 13px; }
+      .preview__sprite { width: 88px; height: 88px; image-rendering: pixelated; margin: -6px 0 -4px; }
+      .preview__body { position: relative; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 18px 6px 12px; min-width: 0; }
+      .preview__tag { align-self: flex-end; padding: 2px 8px; border-radius: 999px; background: #e7dccb; font-size: 11px; font-weight: 700; letter-spacing: .1em; }
+      .preview__line { margin: 6px 0 4px; font-size: clamp(12px, 3.7vw, 15px); font-weight: 700; letter-spacing: .1em; white-space: nowrap; }
+      .skyline { width: 100%; height: auto; image-rendering: pixelated; }
+      .q { display: flex; align-items: baseline; gap: 10px; font-size: 17px; font-weight: 800; letter-spacing: .1em; margin: 14px 0 8px; color: var(--ink); }
+      .q__hint { padding-left: 10px; border-left: 2px solid #cdbfa9; font-size: 12px; font-weight: 400; letter-spacing: .06em; color: #6b6660; }
+      .opts { display: flex; flex-wrap: wrap; gap: 10px; }
+      .opts--grid { display: grid; grid-template-columns: 1fr 1fr; }
+      .opt { position: relative; appearance: none; border: 2px solid #d8cab4; background: #f6f1e8; color: var(--ink); border-radius: 4px;
+        padding: 8px 12px; font: inherit; font-size: 16px; font-weight: 700; letter-spacing: .12em; cursor: pointer; display: inline-flex; align-items: center; gap: 12px; }
+      .opts--2 .opt { flex: 0 1 calc(50% - 5px); justify-content: center; }
+      .opts--3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .opts--3 .opt { justify-content: center; gap: 6px; padding: 9px 4px; font-size: 14px; letter-spacing: .04em; white-space: nowrap; }
+      .opt:hover { border-color: #c8b79c; }
+      .opt[aria-pressed="true"] { border-color: var(--ink); background: #f6dcbc; box-shadow: 0 2px 0 var(--ink); }
+      /* 選中的右上角打勾 */
+      .opt[aria-pressed="true"]::after { content: '✓'; position: absolute; top: -10px; right: -10px; display: grid; place-items: center; width: 24px; height: 24px;
+        border-radius: 50%; background: var(--ink); color: #fff7ec; font-size: 13px; font-weight: 800; letter-spacing: 0; box-shadow: 0 0 0 2px #f3ece1; }
+      .opt .px { flex: none; width: 34px; height: 34px; image-rendering: pixelated; }
       .opt:focus-visible, .board:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
+      /* 隨行卡：每張是一張小車票，上面印像素圖 */
+      .card { flex-direction: column; gap: 6px; padding: 10px 10px 8px; font-size: 15px; }
+      .card__art { position: relative; display: grid; place-items: center; width: 100%; height: 56px; background: #ece2d2; border: 2px solid #d8cab4; border-radius: 3px; overflow: hidden;
+        background-image: linear-gradient(#ece2d2, #ece2d2), linear-gradient(90deg, transparent 0 8%, #ddd0bc 8% 16%, transparent 16% 22%, #ddd0bc 22% 27%, transparent 27% 66%, #ddd0bc 66% 74%, transparent 74% 80%, #ddd0bc 80% 90%, transparent 90%);
+        background-size: 100% 60%, 100% 40%; background-position: top, bottom; background-repeat: no-repeat; }
+      .card__art::before, .card__art::after { content: ''; position: absolute; top: 50%; width: 8px; height: 14px; margin-top: -7px; background: inherit; border: 2px solid #d8cab4; background: #f6f1e8; }
+      .card[aria-pressed="true"] .card__art::before, .card[aria-pressed="true"] .card__art::after { background: #f6dcbc; }
+      .card__art::before { left: -4px; border-radius: 0 7px 7px 0; }
+      .card__art::after { right: -4px; border-radius: 7px 0 0 7px; }
+      .card__art .px { position: relative; width: auto; height: 44px; }
+      .card__art--tile { background: #f3e2c8; }
+      .card__art--tile .px { width: 100%; height: 100%; }
       .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-      .board { margin-top: 20px; width: 100%; border: 0; border-radius: 6px; padding: 14px; font: inherit; font-size: 17px;
-        letter-spacing: .1em; background: var(--milk); color: var(--ink); cursor: pointer; box-shadow: 0 4px 0 #c9a77f; }
-      .board:active { transform: translateY(2px); box-shadow: 0 2px 0 #c9a77f; }
+      .board { margin-top: 18px; width: 100%; border: 2px solid #c99f73; border-radius: 4px; padding: 14px; font: inherit; font-size: 19px; font-weight: 800;
+        letter-spacing: .18em; background: linear-gradient(#f3d2ad, #ecc093); color: var(--ink); cursor: pointer; box-shadow: 0 4px 0 #c99f73, inset 0 2px 0 #f9e3c9; }
+      .board:active { transform: translateY(2px); box-shadow: 0 2px 0 #c99f73, inset 0 2px 0 #f9e3c9; }
       .board[disabled] { opacity: .6; cursor: progress; }
-      .fine { text-align: center; font-size: 12px; color: #8b857d; margin: 12px 0 0; letter-spacing: .1em; }
-      .legal { text-align: center; font-size: 10px; color: #9a948b; margin: 8px 0 0; line-height: 1.5; }
-      .name { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: #fffaf1; border: 2px solid #cfc6b8; border-radius: 4px; padding: 9px 10px; }
+      .fine { text-align: center; font-size: 13px; color: #6b6660; margin: 14px 0 0; letter-spacing: .14em; }
+      .legal { text-align: center; font-size: 10px; color: #8b857d; margin: 8px 0 0; line-height: 1.5; }
+      .name { width: 100%; font: inherit; font-size: 18px; font-weight: 700; letter-spacing: .1em; color: var(--ink); background: #fbf8f2; border: 2px solid #d8cab4; border-radius: 4px; padding: 10px 14px; }
+      .name::placeholder { color: #b5ada2; font-weight: 400; }
       .name:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; border-color: var(--ink); }
       .name-error { min-height: 1.2em; margin: 4px 0 0; font-size: 12px; color: var(--rose); }
 
-      .step-badge { margin-left: auto; font-size: 12px; letter-spacing: .1em; color: #8b857d; }
-      .step-head { display: flex; align-items: center; gap: 10px; margin: 14px 0 2px; }
+      .step-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 2px; }
       .step-title { margin: 0; font-size: 20px; letter-spacing: .2em; }
-      .back { appearance: none; border: 2px solid #cfc6b8; background: #f1ece3; color: var(--ink); border-radius: 4px; width: 36px; height: 36px; font-size: 18px; cursor: pointer; }
+      .back { appearance: none; border: 2px solid #d8cab4; background: #f6f1e8; color: var(--ink); border-radius: 4px; width: 36px; height: 36px; font-size: 18px; cursor: pointer; }
       .back:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
       /* 進站路線圖：一條直的路線色帶，車站是可以點的站點 */
       .route { position: relative; list-style: none; margin: 0; padding: 4px 0 4px 0; max-height: min(46vh, 360px); overflow-y: auto; }
       .route::before { content: ''; position: absolute; left: 21px; top: 18px; bottom: 18px; width: 6px; background: var(--route, #7c93a8); border-radius: 3px; }
       .stop { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; appearance: none; border: 2px solid transparent; background: none;
         color: var(--ink); font: inherit; text-align: left; padding: 6px 8px 6px 12px; border-radius: 6px; cursor: pointer; }
-      .stop:hover { background: #f1ece3; }
-      .stop[aria-pressed="true"] { background: #fffaf1; border-color: var(--ink); }
+      .stop:hover { background: #f6f1e8; }
+      .stop[aria-pressed="true"] { background: #f6dcbc; border-color: var(--ink); }
       .stop:focus-visible { outline: 3px solid var(--rose); outline-offset: 1px; }
       .stop__dot { flex: none; width: 18px; height: 18px; border-radius: 50%; background: #fffaf1; border: 4px solid var(--route, #7c93a8); position: relative; z-index: 1; }
       .stop[aria-pressed="true"] .stop__dot { background: var(--route, #7c93a8); box-shadow: 0 0 0 3px #fffaf1, 0 0 0 5px var(--ink); }
@@ -117,8 +173,9 @@
     <div id="hud"></div>
 
     <main class="gate" id="gate">
-      <section class="gate__card" aria-labelledby="gate-title">
-        <div class="brand">
+      <section class="gate__card" data-step="1" aria-labelledby="gate-title">
+        <header class="gate__top">
+          <div class="brand">
           <!-- 北城捷運 TPRT 原創幾何 T 字像素標誌（docs/PRD.md §3.3） -->
           <svg viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges">
             <rect width="16" height="16" fill="#e8e1d5" />
@@ -129,42 +186,61 @@
             <rect x="4" y="8" width="1" height="1" fill="#4a4744" /><rect x="11" y="8" width="1" height="1" fill="#4a4744" />
             <rect x="4" y="10" width="1" height="1" fill="#4a4744" /><rect x="11" y="10" width="1" height="1" fill="#4a4744" />
           </svg>
-          北城捷運 TPRT
-          <span class="step-badge" id="step-badge">1 / 2</span>
-        </div>
+            北城捷運 TPRT
+          </div>
+          <span class="gate__tag">旅程準備</span>
+        </header>
+        <h1 id="gate-title">車廂角落</h1>
+        <p class="sub">CARRIAGE CORNER</p>
 
-        <!-- 第 1 步：乘客資料 -->
+        <!-- 步驟條：第 2 步時可以點第 1 步回去 -->
+        <ol class="stepper" aria-label="進站步驟">
+          <li class="stepper__item" data-n="1"><button class="stepper__btn" id="to-step-1" type="button"><span class="stepper__num">1</span>設定角色</button></li>
+          <li class="stepper__line" aria-hidden="true"></li>
+          <li class="stepper__item" data-n="2"><span class="stepper__btn"><span class="stepper__num">2</span>選擇路線</span></li>
+        </ol>
+
+        <!-- 第 1 步：設定角色 -->
         <div class="step" id="step-1">
-          <h1 id="gate-title">車廂角落</h1>
-          <p class="sub">CARRIAGE CORNER</p>
+          <div class="preview" role="img" aria-label="角色預覽">
+            <div class="preview__stub">
+              <span class="preview__name preview__name--empty" id="preview-name">你的名字</span>
+              <canvas class="preview__sprite" id="preview-sprite" width="64" height="64"></canvas>
+            </div>
+            <div class="preview__body">
+              <span class="preview__tag">角色預覽</span>
+              <p class="preview__line">今天，以你的樣子出發。</p>
+              <svg class="skyline" viewBox="0 0 96 26" aria-hidden="true" shape-rendering="crispEdges"><path fill="#d9cbb6" d="M87 1h1v1h-1zM87 2h1v1h-1zM87 3h1v1h-1zM87 4h1v1h-1zM87 5h1v1h-1zM86 6h3v1h-3zM86 7h3v1h-3zM86 8h3v1h-3zM27 9h5v1h-5zM86 9h3v1h-3zM27 10h5v1h-5zM85 10h5v1h-5zM15 11h5v1h-5zM27 11h1v1h-1zM29 11h1v1h-1zM31 11h1v1h-1zM66 11h5v1h-5zM85 11h5v1h-5zM15 12h5v1h-5zM27 12h5v1h-5zM66 12h5v1h-5zM78 12h5v1h-5zM85 12h5v1h-5zM5 13h5v1h-5zM15 13h1v1h-1zM17 13h1v1h-1zM19 13h1v1h-1zM27 13h5v1h-5zM82 13h1v1h-1zM85 13h5v1h-5zM5 14h5v1h-5zM15 14h5v1h-5zM22 14h6v1h-6zM29 14h1v1h-1zM31 14h1v1h-1zM82 14h1v1h-1zM85 14h5v1h-5zM5 15h1v1h-1zM7 15h1v1h-1zM9 15h1v1h-1zM11 15h9v1h-9zM22 15h10v1h-10zM33 15h4v1h-4zM85 15h5v1h-5zM0 16h10v1h-10zM11 16h5v1h-5zM17 16h1v1h-1zM19 16h1v1h-1zM22 16h1v1h-1zM24 16h1v1h-1zM26 16h6v1h-6zM33 16h4v1h-4zM85 16h5v1h-5zM0 17h10v1h-10zM11 17h1v1h-1zM13 17h1v1h-1zM15 17h5v1h-5zM22 17h6v1h-6zM29 17h1v1h-1zM31 17h1v1h-1zM33 17h1v1h-1zM35 17h1v1h-1zM37 17h1v1h-1zM82 17h1v1h-1zM85 17h5v1h-5zM0 18h1v1h-1zM2 18h1v1h-1zM4 18h2v1h-2zM7 18h1v1h-1zM9 18h1v1h-1zM11 18h9v1h-9zM22 18h10v1h-10zM33 18h5v1h-5zM82 18h1v1h-1zM85 18h5v1h-5zM0 19h10v1h-10zM11 19h9v1h-9zM22 19h10v1h-10zM33 19h5v1h-5zM82 19h1v1h-1zM85 19h5v1h-5z"/><path fill="#efe7da" d="M28 11h1v1h-1zM30 11h1v1h-1zM16 13h1v1h-1zM18 13h1v1h-1zM28 14h1v1h-1zM30 14h1v1h-1zM6 15h1v1h-1zM8 15h1v1h-1zM16 16h1v1h-1zM18 16h1v1h-1zM23 16h1v1h-1zM25 16h1v1h-1zM12 17h1v1h-1zM14 17h1v1h-1zM28 17h1v1h-1zM30 17h1v1h-1zM34 17h1v1h-1zM36 17h1v1h-1zM1 18h1v1h-1zM3 18h1v1h-1zM6 18h1v1h-1zM8 18h1v1h-1z"/><path fill="#8b7d6b" d="M38 13h44v1h-44zM38 14h1v1h-1zM58 14h3v1h-3zM81 14h1v1h-1zM37 15h2v1h-2zM58 15h3v1h-3zM81 15h2v1h-2zM37 16h2v1h-2zM58 16h3v1h-3zM81 16h2v1h-2zM38 17h1v1h-1zM58 17h3v1h-3zM81 17h1v1h-1zM38 18h1v1h-1zM81 18h1v1h-1zM38 19h44v1h-44zM0 21h96v1h-96z"/><path fill="#f6f1e8" d="M39 14h19v1h-19zM61 14h20v1h-20zM39 15h2v1h-2zM45 15h2v1h-2zM51 15h2v1h-2zM57 15h1v1h-1zM63 15h2v1h-2zM69 15h2v1h-2zM75 15h2v1h-2zM39 16h2v1h-2zM45 16h2v1h-2zM51 16h2v1h-2zM57 16h1v1h-1zM63 16h2v1h-2zM69 16h2v1h-2zM75 16h2v1h-2zM39 17h19v1h-19zM61 17h20v1h-20z"/><path fill="#c9bba5" d="M41 15h4v1h-4zM47 15h4v1h-4zM53 15h4v1h-4zM61 15h2v1h-2zM65 15h4v1h-4zM71 15h4v1h-4zM77 15h4v1h-4zM41 16h4v1h-4zM47 16h4v1h-4zM53 16h4v1h-4zM61 16h2v1h-2zM65 16h4v1h-4zM71 16h4v1h-4zM77 16h4v1h-4z"/><path fill="#c89b72" d="M39 18h42v1h-42z"/><path fill="#cdbfa9" d="M0 20h96v1h-96zM0 22h1v1h-1zM4 22h1v1h-1zM8 22h1v1h-1zM12 22h1v1h-1zM16 22h1v1h-1zM20 22h1v1h-1zM24 22h1v1h-1zM28 22h1v1h-1zM32 22h1v1h-1zM36 22h1v1h-1zM40 22h1v1h-1zM44 22h1v1h-1zM48 22h1v1h-1zM52 22h1v1h-1zM56 22h1v1h-1zM60 22h1v1h-1zM64 22h1v1h-1zM68 22h1v1h-1zM72 22h1v1h-1zM76 22h1v1h-1zM80 22h1v1h-1zM84 22h1v1h-1zM88 22h1v1h-1zM92 22h1v1h-1z"/></svg>
+            </div>
+          </div>
 
-          <p class="q"><label for="name">你的名字（會顯示在頭上）</label></p>
+          <p class="q"><label for="name">你的名字</label><span class="q__hint">顯示在角色頭上</span></p>
           <input class="name" id="name" type="text" maxlength="16" placeholder="例如：小安" autocomplete="nickname" enterkeyhint="next" />
           <p class="name-error" id="name-error" role="alert"></p>
 
-          <p class="q" id="q-gender">性別</p>
-          <div class="opts" role="group" aria-labelledby="q-gender" data-group="gender">
-            <button class="opt" data-value="m" aria-pressed="true">👦 男生</button>
-            <button class="opt" data-value="f" aria-pressed="false">👧 女生</button>
+          <p class="q" id="q-gender">角色外觀</p>
+          <div class="opts opts--2" role="group" aria-labelledby="q-gender" data-group="gender">
+            <button class="opt" data-value="m" aria-pressed="true"><svg class="px" viewBox="0 0 16 15" aria-hidden="true" shape-rendering="crispEdges"><path fill="#4a4744" d="M4 1h8v1h-8zM3 2h1v1h-1zM12 2h1v1h-1zM2 3h1v1h-1zM13 3h1v1h-1zM2 4h1v1h-1zM13 4h1v1h-1zM2 5h1v1h-1zM13 5h1v1h-1zM2 6h1v1h-1zM13 6h1v1h-1zM2 7h1v1h-1zM13 7h1v1h-1zM2 8h1v1h-1zM13 8h1v1h-1zM2 9h1v1h-1zM13 9h1v1h-1zM2 10h1v1h-1zM13 10h1v1h-1zM2 11h1v1h-1zM13 11h1v1h-1zM3 12h1v1h-1zM12 12h1v1h-1zM4 13h8v1h-8z"/><path fill="#6a4a3a" d="M4 2h8v1h-8zM3 3h10v1h-10zM3 4h10v1h-10zM3 5h3v1h-3zM11 5h2v1h-2zM3 6h1v1h-1zM12 6h1v1h-1z"/><path fill="#f0d2b8" d="M6 5h5v1h-5zM4 6h8v1h-8zM3 7h2v1h-2zM6 7h4v1h-4zM11 7h2v1h-2zM3 8h2v1h-2zM6 8h4v1h-4zM11 8h2v1h-2zM3 9h1v1h-1zM5 9h6v1h-6zM12 9h1v1h-1zM3 10h4v1h-4zM9 10h4v1h-4zM3 11h10v1h-10zM4 12h8v1h-8z"/><path fill="#4a4744" d="M5 7h1v1h-1zM10 7h1v1h-1zM5 8h1v1h-1zM10 8h1v1h-1z"/><path fill="#e7a99a" d="M4 9h1v1h-1zM11 9h1v1h-1z"/><path fill="#b97a6f" d="M7 10h2v1h-2z"/></svg><span>男生</span></button>
+            <button class="opt" data-value="f" aria-pressed="false"><svg class="px" viewBox="0 0 16 15" aria-hidden="true" shape-rendering="crispEdges"><path fill="#4a4744" d="M4 1h8v1h-8zM3 2h1v1h-1zM12 2h1v1h-1zM2 3h1v1h-1zM13 3h1v1h-1zM2 4h1v1h-1zM13 4h1v1h-1zM2 5h1v1h-1zM13 5h1v1h-1zM1 6h1v1h-1zM14 6h1v1h-1zM1 7h1v1h-1zM14 7h1v1h-1zM1 8h1v1h-1zM14 8h1v1h-1zM1 9h1v1h-1zM14 9h1v1h-1zM1 10h1v1h-1zM14 10h1v1h-1zM1 11h1v1h-1zM14 11h1v1h-1zM1 12h1v1h-1zM14 12h1v1h-1zM1 13h1v1h-1zM4 13h8v1h-8zM14 13h1v1h-1zM2 14h2v1h-2zM12 14h2v1h-2z"/><path fill="#4a3a32" d="M4 2h8v1h-8zM3 3h10v1h-10zM3 4h10v1h-10zM3 5h6v1h-6zM11 5h2v1h-2zM2 6h4v1h-4zM12 6h2v1h-2zM2 7h1v1h-1zM13 7h1v1h-1zM2 8h1v1h-1zM13 8h1v1h-1zM2 9h1v1h-1zM13 9h1v1h-1zM2 10h1v1h-1zM13 10h1v1h-1zM2 11h1v1h-1zM13 11h1v1h-1zM2 12h2v1h-2zM12 12h2v1h-2zM2 13h2v1h-2zM12 13h2v1h-2z"/><path fill="#f0d2b8" d="M9 5h2v1h-2zM6 6h6v1h-6zM3 7h2v1h-2zM6 7h4v1h-4zM11 7h2v1h-2zM3 8h2v1h-2zM6 8h4v1h-4zM11 8h2v1h-2zM3 9h1v1h-1zM5 9h6v1h-6zM12 9h1v1h-1zM3 10h4v1h-4zM9 10h4v1h-4zM3 11h10v1h-10zM4 12h8v1h-8z"/><path fill="#4a4744" d="M5 7h1v1h-1zM10 7h1v1h-1zM5 8h1v1h-1zM10 8h1v1h-1z"/><path fill="#e7a99a" d="M4 9h1v1h-1zM11 9h1v1h-1z"/><path fill="#b97a6f" d="M7 10h2v1h-2z"/></svg><span>女生</span></button>
           </div>
 
           <p class="q" id="q-avatar">今天穿什麼出門？</p>
-          <div class="opts" role="group" aria-labelledby="q-avatar" data-group="avatar">
-            <button class="opt" data-value="office" aria-pressed="true">👔 上班族</button>
-            <button class="opt" data-value="student" aria-pressed="false">🎒 學生</button>
-            <button class="opt" data-value="hoodie" aria-pressed="false">🧥 連帽外套</button>
-            <button class="opt" data-value="headphone" aria-pressed="false">🎧 耳機族</button>
+          <div class="opts opts--grid" role="group" aria-labelledby="q-avatar" data-group="avatar">
+            <button class="opt" data-value="office" aria-pressed="true"><svg class="px" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path fill="#4a4744" d="M2 2h5v1h-5zM9 2h5v1h-5zM1 3h1v1h-1zM14 3h1v1h-1zM0 4h1v1h-1zM15 4h1v1h-1zM0 5h1v1h-1zM3 5h1v1h-1zM12 5h1v1h-1zM15 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1zM12 6h1v1h-1zM15 6h1v1h-1zM0 7h1v1h-1zM3 7h1v1h-1zM12 7h1v1h-1zM15 7h1v1h-1zM0 8h1v1h-1zM3 8h1v1h-1zM12 8h1v1h-1zM15 8h1v1h-1zM0 9h1v1h-1zM3 9h1v1h-1zM12 9h1v1h-1zM15 9h1v1h-1zM0 10h4v1h-4zM12 10h4v1h-4zM3 11h1v1h-1zM12 11h1v1h-1zM3 12h1v1h-1zM12 12h1v1h-1zM3 13h10v1h-10z"/><path fill="#f6f1e8" d="M7 2h2v1h-2zM6 3h1v1h-1zM9 3h1v1h-1zM1 9h2v1h-2zM13 9h2v1h-2z"/><path fill="#9fb3c8" d="M2 3h4v1h-4zM10 3h4v1h-4zM1 4h6v1h-6zM9 4h6v1h-6zM1 5h2v1h-2zM4 5h3v1h-3zM9 5h3v1h-3zM13 5h2v1h-2zM1 6h2v1h-2zM4 6h3v1h-3zM9 6h3v1h-3zM13 6h2v1h-2zM1 7h2v1h-2zM4 7h2v1h-2zM10 7h2v1h-2zM13 7h2v1h-2zM1 8h2v1h-2zM4 8h3v1h-3zM9 8h3v1h-3zM13 8h2v1h-2zM4 9h8v1h-8zM4 10h8v1h-8zM4 11h8v1h-8zM4 12h8v1h-8z"/><path fill="#d58a4e" d="M7 3h2v1h-2zM7 4h2v1h-2zM7 5h2v1h-2zM7 6h2v1h-2zM6 7h4v1h-4zM7 8h2v1h-2z"/></svg><span>上班族</span></button>
+            <button class="opt" data-value="student" aria-pressed="false"><svg class="px" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path fill="#4a4744" d="M5 1h6v1h-6zM4 2h2v1h-2zM10 2h2v1h-2zM3 3h10v1h-10zM2 4h1v1h-1zM13 4h1v1h-1zM2 5h1v1h-1zM13 5h1v1h-1zM2 6h1v1h-1zM4 6h8v1h-8zM13 6h1v1h-1zM2 7h1v1h-1zM4 7h1v1h-1zM11 7h1v1h-1zM13 7h1v1h-1zM2 8h1v1h-1zM4 8h1v1h-1zM11 8h1v1h-1zM13 8h1v1h-1zM2 9h1v1h-1zM4 9h1v1h-1zM11 9h1v1h-1zM13 9h1v1h-1zM2 10h1v1h-1zM4 10h8v1h-8zM13 10h1v1h-1zM2 11h1v1h-1zM13 11h1v1h-1zM2 12h1v1h-1zM13 12h1v1h-1zM3 13h10v1h-10z"/><path fill="#c0584a" d="M3 4h10v1h-10zM3 5h10v1h-10zM3 6h1v1h-1zM12 6h1v1h-1zM3 7h1v1h-1zM12 7h1v1h-1zM3 8h1v1h-1zM12 8h1v1h-1zM3 9h1v1h-1zM12 9h1v1h-1zM3 10h1v1h-1zM12 10h1v1h-1zM3 11h10v1h-10zM4 12h8v1h-8z"/><path fill="#d77a68" d="M5 7h6v1h-6zM5 8h3v1h-3zM9 8h2v1h-2zM5 9h6v1h-6z"/><path fill="#e9c46a" d="M8 8h1v1h-1z"/><path fill="#8f3f35" d="M3 12h1v1h-1zM12 12h1v1h-1z"/></svg><span>學生</span></button>
+            <button class="opt" data-value="hoodie" aria-pressed="false"><svg class="px" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path fill="#4a4744" d="M5 1h6v1h-6zM4 2h1v1h-1zM11 2h1v1h-1zM3 3h1v1h-1zM6 3h4v1h-4zM12 3h1v1h-1zM2 4h1v1h-1zM5 4h1v1h-1zM10 4h1v1h-1zM13 4h1v1h-1zM1 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM14 5h1v1h-1zM0 6h1v1h-1zM15 6h1v1h-1zM0 7h1v1h-1zM3 7h1v1h-1zM12 7h1v1h-1zM15 7h1v1h-1zM0 8h1v1h-1zM3 8h1v1h-1zM12 8h1v1h-1zM15 8h1v1h-1zM0 9h1v1h-1zM3 9h1v1h-1zM12 9h1v1h-1zM15 9h1v1h-1zM0 10h1v1h-1zM3 10h1v1h-1zM12 10h1v1h-1zM15 10h1v1h-1zM0 11h1v1h-1zM3 11h1v1h-1zM12 11h1v1h-1zM15 11h1v1h-1zM0 12h4v1h-4zM12 12h4v1h-4zM3 13h1v1h-1zM12 13h1v1h-1zM3 14h10v1h-10z"/><path fill="#e2b65a" d="M5 2h6v1h-6zM4 3h2v1h-2zM10 3h2v1h-2zM3 4h2v1h-2zM11 4h2v1h-2zM2 5h4v1h-4zM10 5h4v1h-4zM1 6h14v1h-14zM1 7h2v1h-2zM4 7h3v1h-3zM9 7h3v1h-3zM13 7h2v1h-2zM1 8h2v1h-2zM4 8h8v1h-8zM13 8h2v1h-2zM1 9h2v1h-2zM4 9h1v1h-1zM11 9h1v1h-1zM13 9h2v1h-2zM1 10h2v1h-2zM4 10h1v1h-1zM11 10h1v1h-1zM13 10h2v1h-2zM4 11h8v1h-8zM4 12h8v1h-8z"/><path fill="#f6f1e8" d="M7 5h2v1h-2zM7 7h2v1h-2z"/><path fill="#c4943c" d="M5 9h6v1h-6zM5 10h6v1h-6zM1 11h2v1h-2zM13 11h2v1h-2zM4 13h8v1h-8z"/></svg><span>連帽外套</span></button>
+            <button class="opt" data-value="headphone" aria-pressed="false"><svg class="px" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path fill="#4a4744" d="M5 2h6v1h-6zM4 3h1v1h-1zM11 3h1v1h-1zM3 4h1v1h-1zM5 4h6v1h-6zM12 4h1v1h-1zM2 5h1v1h-1zM4 5h1v1h-1zM11 5h1v1h-1zM13 5h1v1h-1zM2 6h1v1h-1zM4 6h1v1h-1zM11 6h1v1h-1zM13 6h1v1h-1zM1 7h2v1h-2zM4 7h2v1h-2zM10 7h2v1h-2zM13 7h2v1h-2zM0 8h1v1h-1zM5 8h1v1h-1zM10 8h1v1h-1zM15 8h1v1h-1zM0 9h1v1h-1zM5 9h1v1h-1zM10 9h1v1h-1zM15 9h1v1h-1zM0 10h1v1h-1zM5 10h1v1h-1zM10 10h1v1h-1zM15 10h1v1h-1zM0 11h1v1h-1zM5 11h1v1h-1zM10 11h1v1h-1zM15 11h1v1h-1zM1 12h4v1h-4zM11 12h4v1h-4z"/><path fill="#9b9792" d="M5 3h6v1h-6zM4 4h1v1h-1zM11 4h1v1h-1zM3 5h1v1h-1zM12 5h1v1h-1zM3 6h1v1h-1zM12 6h1v1h-1zM3 7h1v1h-1zM12 7h1v1h-1z"/><path fill="#6e6a66" d="M1 8h4v1h-4zM11 8h4v1h-4zM1 9h1v1h-1zM3 9h2v1h-2zM11 9h2v1h-2zM14 9h1v1h-1zM1 10h1v1h-1zM3 10h2v1h-2zM11 10h2v1h-2zM14 10h1v1h-1zM1 11h4v1h-4zM11 11h4v1h-4z"/><path fill="#c9c4bd" d="M2 9h1v1h-1zM13 9h1v1h-1zM2 10h1v1h-1zM13 10h1v1h-1z"/></svg><span>耳機族</span></button>
           </div>
 
-          <p class="q" id="q-card">選一張隨行卡 PassCard</p>
-          <div class="opts" role="group" aria-labelledby="q-card" data-group="passCard">
-            <button class="opt" data-value="tile" aria-pressed="true">▦ 四色花磚</button>
-            <button class="opt" data-value="boba" aria-pressed="false">🧋 像素珍奶</button>
-            <button class="opt" data-value="ricecooker" aria-pressed="false">🍚 像素電鍋</button>
-            <button class="opt" data-value="mangoice" aria-pressed="false">🥭 芒果冰</button>
+          <p class="q" id="q-card">選一張隨行卡<span class="q__hint">PassCard</span></p>
+          <div class="opts opts--grid" role="group" aria-labelledby="q-card" data-group="passCard">
+            <button class="opt card" data-value="tile" aria-pressed="true"><span class="card__art card__art--tile"><svg class="px" viewBox="0 0 24 16" preserveAspectRatio="xMidYMid slice" aria-hidden="true" shape-rendering="crispEdges"><path fill="#7a5a46" d="M0 0h1v1h-1zM7 0h2v1h-2zM15 0h2v1h-2zM23 0h1v1h-1zM1 1h1v1h-1zM6 1h1v1h-1zM9 1h1v1h-1zM14 1h1v1h-1zM17 1h1v1h-1zM22 1h1v1h-1zM2 2h1v1h-1zM5 2h1v1h-1zM10 2h1v1h-1zM13 2h1v1h-1zM18 2h1v1h-1zM21 2h1v1h-1zM3 3h2v1h-2zM11 3h2v1h-2zM19 3h2v1h-2zM3 4h2v1h-2zM11 4h2v1h-2zM19 4h2v1h-2zM2 5h1v1h-1zM5 5h1v1h-1zM10 5h1v1h-1zM13 5h1v1h-1zM18 5h1v1h-1zM21 5h1v1h-1zM1 6h1v1h-1zM6 6h1v1h-1zM9 6h1v1h-1zM14 6h1v1h-1zM17 6h1v1h-1zM22 6h1v1h-1zM0 7h1v1h-1zM7 7h2v1h-2zM15 7h2v1h-2zM23 7h1v1h-1zM0 8h1v1h-1zM7 8h2v1h-2zM15 8h2v1h-2zM23 8h1v1h-1zM1 9h1v1h-1zM6 9h1v1h-1zM9 9h1v1h-1zM14 9h1v1h-1zM17 9h1v1h-1zM22 9h1v1h-1zM2 10h1v1h-1zM5 10h1v1h-1zM10 10h1v1h-1zM13 10h1v1h-1zM18 10h1v1h-1zM21 10h1v1h-1zM3 11h2v1h-2zM11 11h2v1h-2zM19 11h2v1h-2zM3 12h2v1h-2zM11 12h2v1h-2zM19 12h2v1h-2zM2 13h1v1h-1zM5 13h1v1h-1zM10 13h1v1h-1zM13 13h1v1h-1zM18 13h1v1h-1zM21 13h1v1h-1zM1 14h1v1h-1zM6 14h1v1h-1zM9 14h1v1h-1zM14 14h1v1h-1zM17 14h1v1h-1zM22 14h1v1h-1zM0 15h1v1h-1zM7 15h2v1h-2zM15 15h2v1h-2zM23 15h1v1h-1z"/><path fill="#f3e2c8" d="M1 0h2v1h-2zM5 0h2v1h-2zM9 0h2v1h-2zM13 0h2v1h-2zM17 0h2v1h-2zM21 0h2v1h-2zM0 1h1v1h-1zM2 1h1v1h-1zM5 1h1v1h-1zM7 1h2v1h-2zM10 1h1v1h-1zM13 1h1v1h-1zM15 1h2v1h-2zM18 1h1v1h-1zM21 1h1v1h-1zM23 1h1v1h-1zM0 2h2v1h-2zM6 2h4v1h-4zM14 2h4v1h-4zM22 2h2v1h-2zM0 5h2v1h-2zM6 5h4v1h-4zM14 5h4v1h-4zM22 5h2v1h-2zM0 6h1v1h-1zM2 6h1v1h-1zM5 6h1v1h-1zM7 6h2v1h-2zM10 6h1v1h-1zM13 6h1v1h-1zM15 6h2v1h-2zM18 6h1v1h-1zM21 6h1v1h-1zM23 6h1v1h-1zM1 7h2v1h-2zM5 7h2v1h-2zM9 7h2v1h-2zM13 7h2v1h-2zM17 7h2v1h-2zM21 7h2v1h-2zM1 8h2v1h-2zM5 8h2v1h-2zM9 8h2v1h-2zM13 8h2v1h-2zM17 8h2v1h-2zM21 8h2v1h-2zM0 9h1v1h-1zM2 9h1v1h-1zM5 9h1v1h-1zM7 9h2v1h-2zM10 9h1v1h-1zM13 9h1v1h-1zM15 9h2v1h-2zM18 9h1v1h-1zM21 9h1v1h-1zM23 9h1v1h-1zM0 10h2v1h-2zM6 10h4v1h-4zM14 10h4v1h-4zM22 10h2v1h-2zM0 13h2v1h-2zM6 13h4v1h-4zM14 13h4v1h-4zM22 13h2v1h-2zM0 14h1v1h-1zM2 14h1v1h-1zM5 14h1v1h-1zM7 14h2v1h-2zM10 14h1v1h-1zM13 14h1v1h-1zM15 14h2v1h-2zM18 14h1v1h-1zM21 14h1v1h-1zM23 14h1v1h-1zM1 15h2v1h-2zM5 15h2v1h-2zM9 15h2v1h-2zM13 15h2v1h-2zM17 15h2v1h-2zM21 15h2v1h-2z"/><path fill="#e4a46e" d="M3 0h2v1h-2zM11 0h2v1h-2zM19 0h2v1h-2zM3 1h2v1h-2zM11 1h2v1h-2zM19 1h2v1h-2zM3 2h2v1h-2zM11 2h2v1h-2zM19 2h2v1h-2zM0 3h3v1h-3zM5 3h6v1h-6zM13 3h6v1h-6zM21 3h3v1h-3zM0 4h3v1h-3zM5 4h6v1h-6zM13 4h6v1h-6zM21 4h3v1h-3zM3 5h2v1h-2zM11 5h2v1h-2zM19 5h2v1h-2zM3 6h2v1h-2zM11 6h2v1h-2zM19 6h2v1h-2zM3 7h2v1h-2zM11 7h2v1h-2zM19 7h2v1h-2zM3 8h2v1h-2zM11 8h2v1h-2zM19 8h2v1h-2zM3 9h2v1h-2zM11 9h2v1h-2zM19 9h2v1h-2zM3 10h2v1h-2zM11 10h2v1h-2zM19 10h2v1h-2zM0 11h3v1h-3zM5 11h6v1h-6zM13 11h6v1h-6zM21 11h3v1h-3zM0 12h3v1h-3zM5 12h6v1h-6zM13 12h6v1h-6zM21 12h3v1h-3zM3 13h2v1h-2zM11 13h2v1h-2zM19 13h2v1h-2zM3 14h2v1h-2zM11 14h2v1h-2zM19 14h2v1h-2zM3 15h2v1h-2zM11 15h2v1h-2zM19 15h2v1h-2z"/></svg></span><span>四色花磚</span></button>
+            <button class="opt card" data-value="boba" aria-pressed="false"><span class="card__art card__art--boba"><svg class="px" viewBox="0 0 12 13" aria-hidden="true" shape-rendering="crispEdges"><path fill="#4a4744" d="M7 0h2v1h-2zM6 1h2v1h-2zM2 2h8v1h-8zM1 3h1v1h-1zM6 3h1v1h-1zM10 3h1v1h-1zM1 4h1v1h-1zM6 4h1v1h-1zM11 4h1v1h-1zM1 5h1v1h-1zM6 5h1v1h-1zM11 5h1v1h-1zM2 6h1v1h-1zM5 6h1v1h-1zM10 6h1v1h-1zM2 7h1v1h-1zM10 7h1v1h-1zM2 8h1v1h-1zM9 8h1v1h-1zM2 9h1v1h-1zM9 9h1v1h-1zM2 10h1v1h-1zM9 10h1v1h-1zM3 11h1v1h-1zM8 11h1v1h-1zM3 12h6v1h-6z"/><path fill="#f6f1e8" d="M2 3h4v1h-4zM7 3h3v1h-3z"/><path fill="#d8b48a" d="M2 4h4v1h-4zM7 4h4v1h-4zM2 5h4v1h-4zM7 5h4v1h-4zM3 6h2v1h-2zM6 6h4v1h-4zM3 7h7v1h-7zM3 8h6v1h-6zM4 9h2v1h-2zM7 9h2v1h-2zM4 10h1v1h-1zM7 10h1v1h-1z"/><path fill="#5a4038" d="M3 9h1v1h-1zM6 9h1v1h-1zM3 10h1v1h-1zM5 10h2v1h-2zM8 10h1v1h-1zM4 11h4v1h-4z"/></svg></span><span>像素珍奶</span></button>
+            <button class="opt card" data-value="ricecooker" aria-pressed="false"><span class="card__art card__art--ricecooker"><svg class="px" viewBox="0 0 16 13" aria-hidden="true" shape-rendering="crispEdges"><path fill="#4a4744" d="M7 0h2v1h-2zM4 1h8v1h-8zM3 2h1v1h-1zM12 2h1v1h-1zM2 3h12v1h-12zM1 4h2v1h-2zM13 4h2v1h-2zM2 5h1v1h-1zM13 5h1v1h-1zM2 6h1v1h-1zM6 6h4v1h-4zM13 6h1v1h-1zM2 7h1v1h-1zM6 7h1v1h-1zM9 7h1v1h-1zM13 7h1v1h-1zM2 8h1v1h-1zM6 8h4v1h-4zM13 8h1v1h-1zM2 9h1v1h-1zM13 9h1v1h-1zM2 10h1v1h-1zM13 10h1v1h-1zM3 11h10v1h-10zM3 12h2v1h-2zM11 12h2v1h-2z"/><path fill="#f6f1e8" d="M4 2h8v1h-8zM3 4h10v1h-10zM3 5h10v1h-10zM3 6h3v1h-3zM10 6h3v1h-3zM3 7h3v1h-3zM10 7h3v1h-3zM3 8h3v1h-3zM10 8h3v1h-3zM3 9h10v1h-10z"/><path fill="#c0584a" d="M7 7h2v1h-2z"/><path fill="#b8b2a8" d="M3 10h10v1h-10z"/></svg></span><span>像素電鍋</span></button>
+            <button class="opt card" data-value="mangoice" aria-pressed="false"><span class="card__art card__art--mangoice"><svg class="px" viewBox="0 0 16 11" aria-hidden="true" shape-rendering="crispEdges"><path fill="#f0b44c" d="M7 0h2v1h-2zM5 1h2v1h-2zM8 1h2v1h-2zM4 2h2v1h-2zM7 2h2v1h-2zM10 2h2v1h-2zM3 3h1v1h-1zM5 3h4v1h-4zM10 3h3v1h-3zM2 4h3v1h-3zM6 4h4v1h-4zM11 4h3v1h-3z"/><path fill="#e08a2e" d="M7 1h1v1h-1zM6 2h1v1h-1zM9 2h1v1h-1zM4 3h1v1h-1zM9 3h1v1h-1zM5 4h1v1h-1zM10 4h1v1h-1z"/><path fill="#4a4744" d="M1 5h14v1h-14zM1 6h1v1h-1zM14 6h1v1h-1zM2 7h1v1h-1zM13 7h1v1h-1zM3 8h1v1h-1zM12 8h1v1h-1zM4 9h8v1h-8zM6 10h4v1h-4z"/><path fill="#f6f1e8" d="M2 6h12v1h-12zM3 7h10v1h-10zM4 8h8v1h-8z"/></svg></span><span>芒果冰</span></button>
           </div>
 
-          <button class="board" id="next" type="button">下一步：選路線與車站 →</button>
+          <button class="board" id="next" type="button">下一步：選擇路線 →</button>
           <p class="fine">不需註冊・名字隨你取・沒有聊天室</p>
         </div>
 
@@ -172,11 +248,11 @@
         <div class="step" id="step-2" hidden>
           <div class="step-head">
             <button class="back" id="back" type="button" aria-label="回上一步">←</button>
-            <h2 class="step-title">路線與進站車站</h2>
+            <h2 class="step-title">選擇路線與車站</h2>
           </div>
 
           <p class="q" id="q-line">搭哪條線？</p>
-          <div class="opts" role="group" aria-labelledby="q-line" data-group="line">
+          <div class="opts opts--3" role="group" aria-labelledby="q-line" data-group="line">
             <button class="opt" data-value="CX" aria-pressed="true"><span class="dot" style="background:var(--core)"></span>CX 城心線</button>
             <button class="opt" data-value="RV" aria-pressed="false"><span class="dot" style="background:var(--rose)"></span>RV 河岸線</button>
             <button class="opt" data-value="SK" aria-pressed="false"><span class="dot" style="background:var(--khaki)"></span>SK 雲橋線</button>

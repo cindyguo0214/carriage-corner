@@ -64,6 +64,12 @@ export function buildCharacterAtlas(mode: Mode): CharacterFrames {
   return out;
 }
 
+/** 閘門的角色預覽：在 64×64 的畫布上畫一格正面站姿（frame 0／1 輪流就是呼吸） */
+export function paintPreview(ctx: CanvasRenderingContext2D, avatar: AvatarId, gender: Gender, mode: Mode, frame: number) {
+  ctx.clearRect(0, 0, CELL, CELL);
+  drawCharacter(new Painter(ctx), 0, 0, { avatar, gender, view: 'front', o: outfitFor(avatar, gender, mode) }, 'stand', frame, PALETTES[mode]);
+}
+
 interface Look { avatar: AvatarId; gender: Gender; view: View; o: Outfit }
 interface Pose { bodyDy: number; headDy: number; headDx: number; eyes: 'open' | 'down' | 'closed' }
 

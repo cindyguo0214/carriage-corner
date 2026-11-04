@@ -16,14 +16,17 @@ const netModule = REALTIME ? import('./net/session') : null;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const gate = $('gate');
+const card = gate.querySelector<HTMLElement>('.gate__card')!;
 const step1 = $('step-1');
 const step2 = $('step-2');
-const stepBadge = $('step-badge');
+const previewName = $('preview-name');
+const previewSprite = $<HTMLCanvasElement>('preview-sprite');
 const nextButton = $<HTMLButtonElement>('next');
 const backButton = $<HTMLButtonElement>('back');
 const boardButton = $<HTMLButtonElement>('board');
 const nameInput = $<HTMLInputElement>('name');
 const nameError = $('name-error');
+const toStep1 = $<HTMLButtonElement>('to-step-1');
 const route = $<HTMLOListElement>('route');
 
 // 開網頁的載入畫面：等場景模組下載（最多 2.5 秒），至少顯示 0.9 秒
@@ -47,7 +50,31 @@ try {
   }
 } catch { /* 沒有就算了 */ }
 
-nameInput.addEventListener('input', () => (nameError.textContent = ''));
+// ── 角色預覽：名字、外觀與穿搭即時反映（用遊戲裡同一套角色畫法） ──
+const charactersModule = import('./game/characters');
+let previewFrame = 0;
+function renderPreview() {
+  const name = tidyName(nameInput.value);
+  previewName.textContent = name || '你的名字';
+  previewName.classList.toggle('preview__name--empty', !name);
+  void charactersModule.then(({ paintPreview }) => {
+    const { avatar, gender, mode } = store.getState();
+    paintPreview(previewSprite.getContext('2d')!, avatar, gender, mode, previewFrame);
+  });
+}
+// 站著輕輕呼吸；減少動態效果時不動
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  setInterval(() => {
+    if (store.getState().boarded || step1.hidden) return;
+    previewFrame = 1 - previewFrame;
+    renderPreview();
+  }, 800);
+}
+
+nameInput.addEventListener('input', () => {
+  nameError.textContent = '';
+  renderPreview();
+});
 nameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.isComposing) nextButton.click();
 });
@@ -78,6 +105,7 @@ for (const group of gate.querySelectorAll<HTMLElement>('[data-group]')) {
     if (key === 'line') selectLine(value as LineId);
     if (key === 'gender') store.setState({ gender: value as Gender });
     if (key === 'avatar') store.setState({ avatar: value as AvatarId });
+    if (key === 'gender' || key === 'avatar') renderPreview();
     if (key === 'passCard') store.setState({ passCard: value as PassCardId });
   });
 }
@@ -86,7 +114,8 @@ for (const group of gate.querySelectorAll<HTMLElement>('[data-group]')) {
 function showStep(n: 1 | 2) {
   step1.hidden = n !== 1;
   step2.hidden = n !== 2;
-  stepBadge.textContent = `${n} / 2`;
+  card.dataset.step = String(n);
+  toStep1.disabled = n === 1;
   gate.scrollTop = 0;
   (n === 1 ? nameInput : gate.querySelector<HTMLButtonElement>('[data-group="line"] [aria-pressed="true"]'))?.focus();
 }
@@ -101,6 +130,7 @@ nextButton.addEventListener('click', () => {
   showStep(2);
 });
 backButton.addEventListener('click', () => showStep(1));
+toStep1.addEventListener('click', () => showStep(1));
 
 // ── 路線圖：選路線後列出車站，點一站作為進站車站 ──
 function selectLine(line: LineId) {
@@ -150,6 +180,8 @@ if (presetLine === 'CX' || presetLine === 'RV' || presetLine === 'SK') store.set
 const presetStation = Number(params.get('station'));
 if (presetStation >= 1 && presetStation <= LINES[store.getState().line].stations.length) store.setState({ station: presetStation - 1 });
 selectLine(store.getState().line);
+renderPreview();
+toStep1.disabled = true;
 
 boardButton.addEventListener('click', async () => {
   const { line, station } = store.getState();
