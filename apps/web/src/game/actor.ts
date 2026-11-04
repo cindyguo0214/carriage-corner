@@ -19,8 +19,8 @@ export interface Label {
   self: boolean;
   /** 互動時頭上浮起的字（嗶！、♪、📜） */
   pop?: boolean;
-  /** 通道門的指示牌：靠左或靠右對齊、可以點 */
-  sign?: { align: 'left' | 'right'; action: () => void };
+  /** 通道門、轉乘連通道的指示牌：靠左或靠右對齊、可以點；accent 是框線色（轉乘用目標路線色） */
+  sign?: { align: 'left' | 'right'; action: () => void; accent?: string };
 }
 
 /** 走路速度（px/s） */

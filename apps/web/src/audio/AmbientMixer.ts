@@ -152,6 +152,49 @@ export class AmbientMixer {
     this.duck(len * 1000 + 300);
   }
 
+  /** 走過轉乘連通道：先一段車站廣播鈴（原創的四音上行），再一串在通道裡回響的腳步聲（全部即時合成） */
+  playTransfer() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.03;
+    [659, 784, 988, 1319].forEach((f, i) => this.beep(f, t + i * 0.16, i === 3 ? 0.42 : 0.14));
+    const steps = 9;
+    for (let i = 0; i < steps; i++) {
+      const at = t + 0.95 + i * 0.27 + (i % 2) * 0.02;
+      for (const [delay, gain] of [[0, 0.9], [0.09, 0.25]] as const) {
+        const len = 0.07;
+        const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * len), ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let k = 0; k < data.length; k++) data[k] = (Math.random() * 2 - 1) * (1 - k / data.length) ** 3;
+        const src = new AudioBufferSourceNode(ctx, { buffer: buf });
+        const low = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: i % 2 ? 520 : 600 });
+        // 越走越遠：腳步聲慢慢變小
+        const g = new GainNode(ctx, { gain: gain * (1.6 - i / steps) });
+        src.connect(low).connect(g).connect(this.buses.sfx);
+        src.start(at + delay);
+        src.onended = () => g.disconnect();
+      }
+    }
+    this.duck(3600);
+  }
+
+  /** 輪盤選單：滑過扇形時很輕的「喀」 */
+  playTick() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const at = ctx.currentTime + 0.005;
+    const osc = new OscillatorNode(ctx, { type: 'sine', frequency: 2200 });
+    const g = new GainNode(ctx, { gain: 0 });
+    osc.connect(g).connect(this.buses.sfx);
+    osc.frequency.exponentialRampToValueAtTime(900, at + 0.03);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.18, at + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.001, at + 0.04);
+    osc.start(at);
+    osc.stop(at + 0.05);
+    osc.onended = () => g.disconnect();
+  }
+
   /** 嗶卡默契：比進站閘門短一點、亮一點的「嗶」 */
   playCardBeep() {
     if (!this.ctx) return;
