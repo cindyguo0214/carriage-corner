@@ -1,7 +1,7 @@
 // 全域狀態：Pixi 場景、音訊與 React HUD 各自訂閱需要的切片（docs/PRD.md §6.3）
 import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
-import { CARS, type AvatarId, type Gender, type GlowKind, type LineId, type Mode, type PassCardId, type PaxState, type SpotId, type YieldTo } from '@cc/shared';
+import { CARS, type AvatarId, type Gender, type TicketGlow, type LineId, type Mode, type PassCardId, type PaxState, type SpotId, type YieldTo } from '@cc/shared';
 
 export interface Pomodoro {
   kind: 'focus' | 'break';
@@ -64,7 +64,7 @@ export interface AppState {
   pomodoro: Pomodoro | null;
   pomodorosDone: number;
   /** 這趟收到的四種互動次數（車票用） */
-  received: Record<GlowKind, number>;
+  received: Record<TicketGlow, number>;
   /** 這趟最近收到的一支籤（FORTUNES 索引） */
   lastFortune: number | null;
   /** 這趟讓座的次數與最近一次讓給誰（只存在本機，車票用） */

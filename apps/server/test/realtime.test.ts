@@ -116,6 +116,15 @@ describe('realtime server', () => {
     assert.equal(senderGotGlow, false);
   });
 
+  it('車廂裡也能打招呼：對方收到 hi', async () => {
+    const a = await board('SK');
+    const b = await board('SK');
+    const received = once(b.client, 'glow');
+    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'hi' });
+    assert.deepEqual(res, { ok: true, data: { fortune: null } });
+    assert.equal((await received).kind, 'hi');
+  });
+
   it('遞幸運籤：送出者與收到的人拿到同一支籤；小毯只能蓋給正在補眠的人', async () => {
     const a = await board('RV');
     const b = await board('RV');

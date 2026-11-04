@@ -4,6 +4,9 @@ import { LINES } from './lines';
 import type { Gender, GlowKind, LineId, Mode, PassCardId, SpecialKind, SpotId } from './protocol';
 import { QUOTES } from './quotes';
 
+/** 會印在車票上的互動種類（打招呼太日常，不計） */
+export type TicketGlow = Exclude<GlowKind, 'hi'>;
+
 export interface TicketStats {
   line: LineId;
   /** 上車站／目前到達站的站碼 */
@@ -15,8 +18,8 @@ export interface TicketStats {
   boardedAt: number;
   minutes: number;
   pomodoros: number;
-  /** 收到的四種互動次數（嗶卡默契、同頻波紋、蓋上小毯、遞幸運籤） */
-  received: Record<GlowKind, number>;
+  /** 收到的四種互動次數（嗶卡默契、同頻波紋、蓋上小毯、遞幸運籤）；打招呼不印在車票上 */
+  received: Record<TicketGlow, number>;
   /** 最近收到的一支籤（FORTUNES 索引）；沒收到為 null */
   fortune: number | null;
   /** 這趟讓座的次數，與最近一次讓給誰（docs/PRD.md 第 20 章） */

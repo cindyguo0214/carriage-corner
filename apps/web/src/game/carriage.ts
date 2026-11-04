@@ -299,7 +299,7 @@ export class CarriageScene implements Scene {
       if (target) this.playInteraction(target, kind, toMe);
       if (toMe) {
         store.setState(s => ({
-          received: { ...s.received, [kind]: s.received[kind] + 1 },
+          ...(kind !== 'hi' ? { received: { ...s.received, [kind]: s.received[kind] + 1 } } : {}),
           ...(kind === 'fortune' && fortune !== null ? { lastFortune: fortune } : {}),
         }));
         actions.toast(receivedToast(kind, target?.state === 'music', fortune));
@@ -513,6 +513,11 @@ export class CarriageScene implements Scene {
   private playInteraction(target: Pax, kind: GlowKind, involved: boolean) {
     const now = Date.now();
     switch (kind) {
+      case 'hi':
+        this.showGlow(target);
+        this.pop(target, '👋');
+        if (involved) mixer.playHi();
+        break;
       case 'beep':
         this.showGlow(target);
         this.pop(target, '嗶！');
@@ -924,6 +929,7 @@ function hash(s: string) {
 /** 收到互動的人看到的提示（只有自己看得到） */
 function receivedToast(kind: GlowKind, listening: boolean, fortune: number | null) {
   switch (kind) {
+    case 'hi': return '有人向你揮揮手：Hi 👋';
     case 'beep': return '有人刷了一下隨行卡：嗶！跟你打聲招呼。';
     case 'wave': return listening ? '有人跟你同頻，一起聽著這首歌。' : '有人遞給你一點溫暖的微光。';
     case 'blanket': return '有人幫你蓋上一條小毯子。好好睡。';
