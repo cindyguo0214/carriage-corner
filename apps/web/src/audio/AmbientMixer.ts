@@ -19,7 +19,7 @@ const SFX_GAIN = 0.089; // ≈ -21 dBFS
 const STORAGE_KEY = 'cc.mixer.v2';
 const MOOD_KEY = 'cc.mood.v1';
 /** 情境音樂的基準音量與切換時的淡入淡出秒數 */
-const MOOD_GAIN = 0.35;
+const MOOD_GAIN = 0.5;
 const MOOD_FADE_SEC = 1.5;
 /** 聽情境音樂時，鐵軌行駛聲壓到原本的這個比例，讓音樂在前面 */
 const RAIL_UNDER_MUSIC = 0.35;
