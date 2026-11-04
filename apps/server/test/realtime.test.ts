@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { after, afterEach, before, describe, it } from 'node:test';
 import { io as connect, type Socket } from 'socket.io-client';
-import type { BoardedSnapshot, ClientToServer, LineId, PlatformArrival, ServerToClient } from '@cc/shared';
+import { CARS, type BoardedSnapshot, type ClientToServer, type LineId, type PlatformArrival, type ServerToClient } from '@cc/shared';
 import { createRealtimeServer, type RealtimeServer } from '../src/app';
 import type { Config } from '../src/config';
 
@@ -96,7 +96,7 @@ describe('realtime server', () => {
     const ninth = riders[8].snap.room;
     assert.ok(!first8.has(ninth.id), '第 9 人改坐別節，不擠博愛座');
     assert.equal(ninth.train, riders[0].snap.room.train, '仍是同一列車');
-    assert.equal(ninth.cars, 4);
+    assert.equal(ninth.cars, CARS);
     const other = await board('CX');
     assert.notEqual(other.snap.room.train, ninth.train);
   });
@@ -114,6 +114,15 @@ describe('realtime server', () => {
     assert.equal(glow.to, b.snap.you.pid);
     await new Promise(r => setTimeout(r, 100));
     assert.equal(senderGotGlow, false);
+  });
+
+  it('車廂裡也能打招呼：對方收到 hi', async () => {
+    const a = await board('SK');
+    const b = await board('SK');
+    const received = once(b.client, 'glow');
+    const res = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'hi' });
+    assert.deepEqual(res, { ok: true, data: { fortune: null } });
+    assert.equal((await received).kind, 'hi');
   });
 
   it('遞幸運籤：送出者與收到的人拿到同一支籤；小毯只能蓋給正在補眠的人', async () => {

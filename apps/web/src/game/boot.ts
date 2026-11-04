@@ -21,6 +21,7 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
   let line = LINES[lineId];
 
   const carriage = () => (stage.current?.kind === 'carriage' ? (stage.current as CarriageScene) : null);
+  const platform = () => (stage.current?.kind === 'platform' ? (stage.current as PlatformScene) : null);
   let busy = false;
 
   const startRide = (scene: CarriageScene) => {
@@ -145,7 +146,7 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
           net ? net.moveCar(dir) : Promise.resolve(null),
           { tip: dir === 1 ? `穿過通道門，往第 ${target} 車廂走去…` : `穿過通道門，往回走到第 ${target} 車廂…`, lineColor: line.color, minMs: 700 },
         );
-        if (net && !snap) return actions.toast('隔壁車廂人太多了，先待在這裡吧。');
+        if (net && !snap) return actions.toast('隔壁車廂人有點多，先留在這一節吧。');
         stage.slide(dir);
         if (snap) scene.applySnapshot(snap, false);
         else scene.moveCarLocal(target);
@@ -185,6 +186,7 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
     alight: () => void carriageHooks.alight(),
     moveCar: dir => void carriageHooks.moveCar(dir),
     popSelf: (text, ms) => carriage()?.popSelf(text, ms),
+    platformGlow: (npc, kind) => platform()?.greet(npc, kind),
     async signTicket(stats) {
       if (!net) return null;
       try {

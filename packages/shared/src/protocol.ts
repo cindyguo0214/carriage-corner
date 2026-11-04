@@ -17,7 +17,7 @@ export type SpotId = SeatId | StandId;
 // 車廂內禁止飲食：沒有「喝咖啡」狀態，也沒有「遞咖啡」
 export type PaxState = 'idle' | 'music' | 'read' | 'sleep';
 // 對其他乘客的互動（docs/PRD.md 第 17 章）：嗶卡默契、同頻波紋、蓋上小毯（對方補眠時）、遞幸運籤
-export type GlowKind = 'beep' | 'wave' | 'blanket' | 'fortune';
+export type GlowKind = 'hi' | 'beep' | 'wave' | 'blanket' | 'fortune';
 export type Segment = 'underground' | 'elevated' | 'portal_up' | 'portal_down';
 export type Mode = 'morning' | 'night';
 
@@ -151,8 +151,8 @@ export const NAME_MAX_GRAPHEMES = 8;
 /** 名字被過濾或留白時的替代名 */
 export const FALLBACK_NAME = '旅人';
 /** 一列車的車廂數 */
-export const CARS = 4;
-export const GLOW_KINDS: GlowKind[] = ['beep', 'wave', 'blanket', 'fortune'];
+export const CARS = 6;
+export const GLOW_KINDS: GlowKind[] = ['hi', 'beep', 'wave', 'blanket', 'fortune'];
 export const PAX_STATES: PaxState[] = ['idle', 'music', 'read', 'sleep'];
 export const AVATARS: PlayerAvatar[] = ['office', 'student', 'hoodie', 'headphone'];
 export const SPECIAL_KINDS: SpecialKind[] = ['elder', 'parent'];

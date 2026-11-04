@@ -2,7 +2,7 @@
 // 連線時由伺服器驅動乘客、列車與留言；離線時本機模擬。到站開門可點車門下車，點兩端貫通道換車廂，點空位換座位。
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import {
-  CARS, FORTUNES, fortuneAt, isBigStation, isSpecial, isStand, NEAR_PRIORITY_COLUMNS, SEATS, spotColumn, STANDS, yieldTarget,
+  CARS, FORTUNES, fortuneAt, isBigStation, LINES, isSpecial, isStand, NEAR_PRIORITY_COLUMNS, SEATS, spotColumn, STANDS, yieldTarget,
   type BoardedSnapshot, type GlowKind, type Mode, type Passenger, type ServerToClient, type SpotId, type WindowNote,
 } from '@cc/shared';
 import { mixer } from '../audio/AmbientMixer';
@@ -153,7 +153,7 @@ export class CarriageScene implements Scene {
       },
       arrive: () => {
         const s = this.train.line.stations[this.train.to];
-        store.setState({ train: { from: this.train.from, to: this.train.to, phase: 'dwell' } });
+        store.setState({ train: { from: this.train.from, to: this.train.to, phase: 'dwell', arriveAt: this.train.leg.arriveAt } });
         actions.say(`${s.zh}到了。要下車就點車門；想再坐一會兒也沒關係。｜${s.en}. Tap a door to get off.`);
         if (!this.net) this.applyArrival(this.passengers.planLocalArrival(isBigStation(this.train.line, this.train.to)), String(Math.random()));
       },
@@ -162,7 +162,7 @@ export class CarriageScene implements Scene {
         actions.say('列車要出發了，想再坐一會兒也沒關係。');
       },
       depart: (from, to) => {
-        store.setState({ train: { from, to, phase: 'run' } });
+        store.setState({ train: { from, to, phase: 'run', arriveAt: this.train.leg.arriveAt } });
         this.scenery.onDepart(this.train);
       },
     }, this.net ? null : { runSec: devParams.runSec });
@@ -178,7 +178,7 @@ export class CarriageScene implements Scene {
     }
     this.lastTunnel = this.train.inTunnel;
     mixer.setSegment(this.lastTunnel ? 'underground' : 'elevated');
-    store.setState({ scene: 'carriage', car: this.car, cars: CARS, train: { from: this.train.from, to: this.train.to, phase: this.train.phase } });
+    store.setState({ scene: 'carriage', car: this.car, cars: CARS, train: { from: this.train.from, to: this.train.to, phase: this.train.phase, arriveAt: this.train.leg.arriveAt } });
 
     // 自己的狀態：本機立即反映，再（去抖動後）同步給同車乘客
     let stateTimer: ReturnType<typeof setTimeout> | undefined;
@@ -239,7 +239,7 @@ export class CarriageScene implements Scene {
     this.clearNotes();
     snap.notes.forEach(n => this.applyNote(n));
     this.train.setLeg(legFromSnapshot(this.train.line, snap.train, this.net?.offset ?? 0), Date.now(), false);
-    store.setState({ train: { from: this.train.from, to: this.train.to, phase: this.train.phase } });
+    store.setState({ train: { from: this.train.from, to: this.train.to, phase: this.train.phase, arriveAt: this.train.leg.arriveAt } });
     snap.passengers.forEach(p => this.noteRider(p));
     if (isResync) this.scenery.onDepart(this.train);
   }
@@ -299,7 +299,7 @@ export class CarriageScene implements Scene {
       if (target) this.playInteraction(target, kind, toMe);
       if (toMe) {
         store.setState(s => ({
-          received: { ...s.received, [kind]: s.received[kind] + 1 },
+          ...(kind !== 'hi' ? { received: { ...s.received, [kind]: s.received[kind] + 1 } } : {}),
           ...(kind === 'fortune' && fortune !== null ? { lastFortune: fortune } : {}),
         }));
         actions.toast(receivedToast(kind, target?.state === 'music', fortune));
@@ -491,7 +491,6 @@ export class CarriageScene implements Scene {
     for (let i = 0; i < 6; i++) this.particles.emit('spark', cx - 8 + Math.random() * 16, cy - 4, tint);
   }
 
-  /** 頭上浮起一小段字（嗶！、♪、📜），1.6 秒後消失 */
   /** 自己頭上浮出一個小圖示（例如切換情境音樂時的 🌱） */
   popSelf(text: string, ms?: number) {
     const self = this.passengers.get(this.selfPid);
@@ -501,6 +500,7 @@ export class CarriageScene implements Scene {
     this.pops.push({ id: `self${++this.popSeq}`, actor: self.actor, text, born: performance.now(), ms: ms ?? 1600 });
   }
 
+  /** 頭上浮起一小段字（嗶！、♪、📜），1.6 秒後消失 */
   private pop(target: Pax, text: string) {
     this.popOn(target.actor, text);
   }
@@ -513,6 +513,11 @@ export class CarriageScene implements Scene {
   private playInteraction(target: Pax, kind: GlowKind, involved: boolean) {
     const now = Date.now();
     switch (kind) {
+      case 'hi':
+        this.showGlow(target);
+        this.pop(target, '👋');
+        if (involved) mixer.playHi();
+        break;
       case 'beep':
         this.showGlow(target);
         this.pop(target, '嗶！');
@@ -642,7 +647,7 @@ export class CarriageScene implements Scene {
         && x >= p.actor.sprite.x + 14 && x < p.actor.sprite.x + 50 && y >= p.actor.sprite.y + 4 && y < p.actor.sprite.y + 62,
     );
     if (hit) {
-      actions.setUi({ glowMenu: { seat: hit.seat, name: hit.actor.look.name, state: hit.state, x: client.x, y: client.y }, noteMenu: null });
+      actions.setUi({ glowMenu: { target: hit.seat, name: hit.actor.look.name, state: hit.state, x: client.x, y: client.y }, noteMenu: null });
       return;
     }
     actions.setUi({ glowMenu: null, noteMenu: null });
@@ -924,6 +929,7 @@ function hash(s: string) {
 /** 收到互動的人看到的提示（只有自己看得到） */
 function receivedToast(kind: GlowKind, listening: boolean, fortune: number | null) {
   switch (kind) {
+    case 'hi': return '有人向你揮揮手：Hi 👋';
     case 'beep': return '有人刷了一下隨行卡：嗶！跟你打聲招呼。';
     case 'wave': return listening ? '有人跟你同頻，一起聽著這首歌。' : '有人遞給你一點溫暖的微光。';
     case 'blanket': return '有人幫你蓋上一條小毯子。好好睡。';
@@ -934,7 +940,7 @@ function receivedToast(kind: GlowKind, listening: boolean, fortune: number | nul
   }
 }
 
-/** 車門上方 LED 路線圖：原創像素線條＋虛擬站點；下一站閃爍 */
+/** 車門上方 LED 路線圖：原創像素線條＋虛擬站點；下一站閃爍。轉乘站下方加註轉乘路線色塊（§23.3），駛近時雙色交替 */
 function drawLed(g: Graphics, train: Train, mode: Mode, blinkOn: boolean) {
   const pal = PALETTES[mode];
   const stations = train.line.stations;
@@ -945,12 +951,23 @@ function drawLed(g: Graphics, train: Train, mode: Mode, blinkOn: boolean) {
     const span = d.w - 18;
     const y = 15;
     g.rect(x0, y, span, 1).fill({ color: line, alpha: 0.8 });
-    stations.forEach((_, i) => {
+    stations.forEach((st, i) => {
       const x = Math.round(x0 + (i / (stations.length - 1)) * span) - 1;
       const passed = train.dir === 1 ? i < train.to : i > train.to;
       const isNext = i === train.to;
-      const color = isNext ? (train.phase === 'dwell' || blinkOn ? pal.ledOn : pal.ledDim) : passed ? pal.ledDim : pal.ledOn;
-      g.rect(x, y - 1, 3, 3).fill(hexToNum(color));
+      const transfers = st.transfer ?? [];
+      // 駛近轉乘站：站點與色塊在 LED 色和轉乘路線色之間交替
+      const alternate = isNext && transfers.length > 0 && train.phase !== 'dwell';
+      let color = hexToNum(isNext ? (train.phase === 'dwell' || blinkOn ? pal.ledOn : pal.ledDim) : passed ? pal.ledDim : pal.ledOn);
+      if (alternate) color = blinkOn ? hexToNum(pal.ledOn) : hexToNum(LINES[transfers[0]].color);
+      g.rect(x, y - 1, 3, 3).fill(color);
+      transfers.forEach((to, k) => {
+        const tag = hexToNum(LINES[to].color);
+        const tx = x + k * 4;
+        g.rect(tx + 1, y + 2, 1, 1).fill({ color: hexToNum(pal.ledDim) });
+        g.rect(tx, y + 4, 3, 2).fill(alternate && blinkOn ? tag : alternate ? hexToNum(pal.ledOn) : tag);
+        if (passed && !isNext) g.rect(tx, y + 4, 3, 2).fill({ color: hexToNum(pal.led), alpha: 0.45 });
+      });
     });
     const ax = Math.round(x0 + (train.to / (stations.length - 1)) * span) + (train.dir === 1 ? -6 : 4);
     g.rect(ax, y - 5, 2, 1).fill(hexToNum(pal.ledOn));

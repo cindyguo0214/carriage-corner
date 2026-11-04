@@ -405,3 +405,202 @@
     animation: none;
   }
 }
+
+/* 車廂頂部跑馬燈（docs/PRD.md §23.3）：到站前 30 秒，像車廂 LED 字幕一樣慢慢捲過 */
+.ticker {
+  pointer-events: none;
+  align-self: center;
+  width: min(36rem, 100%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  padding: 5px 10px;
+  background: #2f2d33;
+  color: #e6c9a8;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.ticker__lamp {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.ticker__track {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+.ticker__text {
+  display: inline-block;
+  padding-left: 100%;
+  animation: ticker-scroll 16s linear infinite;
+}
+
+@keyframes ticker-scroll {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker__track {
+    white-space: normal;
+    mask-image: none;
+  }
+
+  .ticker__text {
+    padding-left: 0;
+    animation: none;
+  }
+}
+
+/* 完整簡易站點圖：點頂部資訊列展開 */
+.route-map {
+  pointer-events: auto;
+  position: relative;
+  align-self: flex-start;
+  width: min(21rem, calc(100vw - 1.5rem));
+  padding: 10px 12px 12px;
+  border-radius: 6px;
+  background: rgb(232 225 213 / 0.96);
+  color: var(--color-ink);
+  box-shadow: 0 0 0 1px rgb(74 71 68 / 0.12), 0 6px 18px rgb(0 0 0 / 0.12);
+  font-size: 12px;
+}
+
+.route-map--night {
+  background: rgb(74 71 86 / 0.96);
+  color: var(--color-oat);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 6px 18px rgb(0 0 0 / 0.3);
+}
+
+.route-map__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.route-map__badge {
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.route-map__dir {
+  opacity: 0.7;
+}
+
+.route-map__close {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.route-map__close:hover,
+.route-map__close:focus-visible {
+  opacity: 1;
+  background: rgb(0 0 0 / 0.06);
+}
+
+.route-map__list {
+  position: relative;
+  display: grid;
+  gap: 4px;
+}
+
+/* 路線色的直線串起每一站 */
+.route-map__list::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.route-map__stop {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 3px 0 3px 20px;
+}
+
+.route-map__dot {
+  position: absolute;
+  left: 1px;
+  top: 7px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--line);
+}
+
+.route-map__stop .route-map__dot {
+  background: var(--color-oat);
+}
+
+.route-map--night .route-map__stop .route-map__dot {
+  background: var(--color-smoke-soft);
+}
+
+.route-map__stop.is-passed {
+  opacity: 0.5;
+}
+
+.route-map__stop.is-next .route-map__dot {
+  background: var(--line);
+  box-shadow: 0 0 0 2px var(--line), 0 0 0 5px rgb(217 185 140 / 0.45);
+}
+
+.route-map__name {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.route-map__name small {
+  margin-left: 4px;
+  font-weight: 400;
+  letter-spacing: 0;
+  opacity: 0.65;
+}
+
+.route-map__now {
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--color-lamp);
+  color: var(--color-smoke);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.route-map__xfer {
+  padding: 0 5px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.route-map__seg {
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.6;
+}

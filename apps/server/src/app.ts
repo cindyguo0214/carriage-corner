@@ -31,7 +31,7 @@ const BoardReq = z.object({
 });
 const PlatformReq = z.object({ line: z.enum(['CX', 'RV', 'SK']), station: z.number().int().min(0).max(32) });
 const StateReq = z.object({ state: z.enum(['idle', 'music', 'read', 'sleep']) });
-const GlowReq = z.object({ to: z.string().max(32), kind: z.enum(['beep', 'wave', 'blanket', 'fortune']) });
+const GlowReq = z.object({ to: z.string().max(32), kind: z.enum(['hi', 'beep', 'wave', 'blanket', 'fortune']) });
 const SeatReq = z.object({ seat: z.enum(SPOTS as [string, ...string[]]).transform(s => s as (typeof SPOTS)[number]) });
 const CarReq = z.object({ dir: z.union([z.literal(-1), z.literal(1)]) });
 const NoteReq = z.object({ text: z.string().max(200) });
