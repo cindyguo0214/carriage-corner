@@ -7,7 +7,7 @@ import { createRealtimeServer, type RealtimeServer } from '../src/app';
 import type { Config } from '../src/config';
 
 const cfg: Config = {
-  port: 0, webOrigin: '*', runSec: [60, 60], dwellSec: 10, graceSec: 60, noteTtlSec: 60, npcWarmth: 4,
+  port: 0, webOrigin: '*', runSec: [60, 60], dwellSec: 10, platformWaitSec: 60, platformLeadSec: [10, 16], graceSec: 60, noteTtlSec: 60, npcWarmth: 4,
   tokenSecret: 'ticket-test-secret',
 };
 

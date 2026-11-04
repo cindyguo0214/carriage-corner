@@ -26,7 +26,10 @@ const BoardReq = z.object({
   gender: z.enum(['m', 'f']),
   avatar: z.enum(['office', 'student', 'hoodie', 'headphone']),
   passCard: z.enum(['tile', 'boba', 'ricecooker', 'mangoice']),
+  station: z.number().int().min(0).max(32).optional(),
+  train: z.string().max(32).optional(),
 });
+const PlatformReq = z.object({ line: z.enum(['CX', 'RV', 'SK']), station: z.number().int().min(0).max(32) });
 const StateReq = z.object({ state: z.enum(['idle', 'music', 'read', 'sleep']) });
 const GlowReq = z.object({ to: z.string().max(32), kind: z.enum(['beep', 'wave', 'blanket', 'fortune']) });
 const SeatReq = z.object({ seat: z.enum(SPOTS as [string, ...string[]]).transform(s => s as (typeof SPOTS)[number]) });
@@ -93,7 +96,7 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
     socket.on('board', async (raw, ack) => {
       const req = BoardReq.safeParse(raw);
       if (!req.success || socket.data.pid) return ack(BAD);
-      const { sid, resumeToken, line, name, gender, avatar } = req.data;
+      const { sid, resumeToken, line, name, gender, avatar, station, train } = req.data;
       if (!limiter.take(`board:${sid}`, 5, 60_000)) return ack(LIMITED);
 
       // 座位還保留就復位（同一個 sid、仍在寬限內）
@@ -101,7 +104,10 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
       let room = claims && claims.sid === sid ? rooms.get(claims.roomId) : undefined;
       let pax = room && claims ? room.resume(claims.pid, sid) : null;
       if (!room || !pax) {
-        room = rooms.assign(line);
+        // 從月台走進車門：只能坐進正停在這站的那班車（docs/PRD.md 第 19 章）
+        const target = station !== undefined && train ? rooms.boardAt(line, station, train) : rooms.assign(line);
+        if (!target) return ack({ ok: false, code: 'MISSED' });
+        room = target;
         pax = room.seatHuman(sid, { name: safeName(name), gender, avatar });
         socket.to(room.id).emit('pax:join', { ...publicPax(pax), via: 'door' });
       }
@@ -117,6 +123,14 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
       socket.data = { sid: socket.data.sid };
       await socket.leave(room.id);
     };
+
+    socket.on('platform:next', (raw, ack) => {
+      const req = PlatformReq.safeParse(raw);
+      if (!req.success) return ack(BAD);
+      if (!limiter.take(`platform:${socket.id}`, 20, 60_000)) return ack(LIMITED);
+      const next = rooms.nextArrival(req.data.line, req.data.station);
+      ack(next ? { ok: true, data: next } : BAD);
+    });
 
     socket.on('alight', async (_raw, ack) => {
       const ctx = current();

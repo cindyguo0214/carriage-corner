@@ -1,7 +1,7 @@
 // 連線層：連線、時鐘校正、上下車、換座位與換車廂、斷線重連（docs/PRD.md §7.6）
 import { io, type Socket } from 'socket.io-client';
 import type {
-  AvatarId, BoardedSnapshot, ClientToServer, Gender, LineId, PassCardId, ServerToClient, SpotId,
+  AvatarId, BoardedSnapshot, ClientToServer, Gender, LineId, PassCardId, PlatformArrival, ServerToClient, SpotId,
 } from '@cc/shared';
 
 export type GameSocket = Socket<ServerToClient, ClientToServer>;
@@ -12,6 +12,9 @@ export interface BoardRequest {
   gender: Gender;
   avatar: AvatarId;
   passCard: PassCardId;
+  /** 從月台走進哪一站、哪一班車的車門（docs/PRD.md 第 19 章） */
+  station?: number;
+  train?: string;
 }
 
 export interface NetLink {
@@ -20,8 +23,10 @@ export interface NetLink {
   offset: number;
   /** 目前是否坐在某節車廂裡（在月台上為 false） */
   readonly boarded: boolean;
-  /** 從月台上車；失敗時回傳 null */
+  /** 從月台上車；失敗時回傳 null（例如那班車已經開走） */
   board(req: BoardRequest): Promise<BoardedSnapshot | null>;
+  /** 月台上：下一班停靠這站的列車，時間已換成本機時鐘；連不上時回傳 null */
+  nextArrival(line: LineId, station: number): Promise<PlatformArrival | null>;
   /** 到站開門時下車 */
   alight(): Promise<boolean>;
   moveSeat(seat: SpotId): Promise<boolean>;
@@ -110,6 +115,12 @@ export async function connect(): Promise<NetLink | null> {
           return null;
         }
       },
+      async nextArrival(line, station) {
+        const res = await socket.timeout(ACK_TIMEOUT_MS).emitWithAck('platform:next', { line, station }).catch(() => null);
+        if (!res?.ok) return null;
+        const { arriveAt, departAt } = res.data;
+        return { ...res.data, arriveAt: arriveAt - link.offset, departAt: departAt - link.offset };
+      },
       async alight() {
         const res = await socket.timeout(ACK_TIMEOUT_MS).emitWithAck('alight', {}).catch(() => null);
         if (!res?.ok) return false;
@@ -143,7 +154,8 @@ export async function connect(): Promise<NetLink | null> {
         link.offset = await syncClock(socket);
         // 在月台上就不用重新進站
         if (boarded && lastReq) {
-          const snap = await sendBoard(lastReq);
+          // 座位沒保留住時，不再指定當初那班車：照舊分流到這條線的車廂
+          const snap = await sendBoard({ ...lastReq, station: undefined, train: undefined });
           resyncListeners.forEach(fn => fn(snap));
         }
         statusListeners.forEach(fn => fn('online'));

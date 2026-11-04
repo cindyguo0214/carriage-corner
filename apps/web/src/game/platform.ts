@@ -1,7 +1,8 @@
 // 月台場景：等車、坐長椅、看列車進站開門，點車門上車（docs/PRD.md 第 15 章）
-// 月台只在本機模擬：候車的人是 NPC；上車時才向伺服器要座位。
+// 候車的人是本機 NPC。連線時列車進站、開門、離站的時間跟伺服器的列車一致（第 19 章），
+// 走進車門時坐進的就是那班停在這站的車；離線時在本機隨機排班。
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { CARS, LINES, npcIdentity, stationIsUnderground, type LineId, type Mode } from '@cc/shared';
+import { CARS, LINES, npcIdentity, stationIsUnderground, type LineId, type Mode, type PlatformArrival } from '@cc/shared';
 import { mixer } from '../audio/AmbientMixer';
 import { actions, devParams, store, type PlatformPhase } from '../store';
 import { Actor, type Label } from './actor';
@@ -37,8 +38,10 @@ interface Npc { actor: Actor; role: Role; spot: string | null }
 interface Xfer { to: LineId; slot: (typeof XFER_SLOTS)[number]; sprite: Sprite }
 
 export interface PlatformHooks {
-  /** 走進車門了：上車。回傳 false 代表沒上成（連線失敗等），玩家回到月台 */
-  board(toward: number): Promise<boolean>;
+  /** 走進車門了：上車（train 是伺服器那班車的編號）。回傳 false 代表沒上成（車開走了、連線失敗），玩家回到月台 */
+  board(toward: number, train?: string): Promise<boolean>;
+  /** 連線時：下一班停靠這站的列車（本機時鐘）。沒有這個 hook、或回傳 null 時改在本機隨機排班 */
+  nextTrain?(): Promise<PlatformArrival | null>;
   /** 走下轉乘連通道了：換到另一條線的月台（docs/PRD.md §18.1） */
   transfer(to: LineId): void;
 }
@@ -47,7 +50,7 @@ export interface PlatformStart {
   lineId: LineId;
   station: number;
   /** 剛下車：列車還停著、門開著，剩下幾毫秒關門；toward 是那班車的方向 */
-  docked?: { leftMs: number; toward: number; fromDoor: number };
+  docked?: { leftMs: number; toward: number; fromDoor: number; train?: string };
   /** 從哪條線的轉乘連通道走上來 */
   via?: LineId;
 }
@@ -83,7 +86,9 @@ export class PlatformScene implements Scene {
   private frames: CharacterFrames | undefined;
 
   private phase: PlatformPhase = 'away';
+  /** 這個階段過了幾秒、何時結束：以真實時鐘計，切到背景再回來時會追上伺服器的列車 */
   private phaseT = 0;
+  private phaseEnd = 0;
   private phaseLen = 6;
   private toward: number;
   private trainX = 3000;
@@ -96,6 +101,10 @@ export class PlatformScene implements Scene {
   private lightAcc = 0;
   private time = 0;
   private boarding = false;
+  /** 連線時這一班車的伺服器排班；null 代表還在問、或離線排班 */
+  private schedule: PlatformArrival | null = null;
+  private asking = false;
+  private disposed = false;
   /** 正走向開著的車門 */
   private walkingToDoor = false;
   /** 延遲動作：跟著場景的時間走，場景收掉就不會再執行 */
@@ -170,20 +179,24 @@ export class PlatformScene implements Scene {
       const sx = cellX(this.stairsCenter(via));
       this.me = new Actor(ME, { name, gender, avatar }, 'walk', 'back', sx, XFER_TOP - FEET + 40);
       this.me.walkTo([{ x: sx, y: LANE_Y + 4 }], 'back', () => this.standStill());
-      this.setPhase('away', 8);
+      this.awaitTrain(8);
     } else if (docked) {
       // 剛從這班車下來：從車門走出來
       const dx = cellX(doorCenter(docked.fromDoor));
       this.me = new Actor(ME, { name, gender, avatar }, 'stand', 'front', dx, DOOR_Y);
       this.me.walkTo([{ x: dx, y: LANE_Y + 6 }], 'front', () => this.standStill());
       this.setPhase('open', Math.max(2.5, docked.leftMs / 1000));
+      if (docked.train) {
+        const now = Date.now();
+        this.schedule = { train: docked.train, arriveAt: now, departAt: now + docked.leftMs, dir: docked.toward === 0 ? -1 : 1 };
+      }
       this.trainX = 0;
       this.doors = 1;
     } else {
       // 從閘門走下來
       this.me = new Actor(ME, { name, gender, avatar }, 'walk', 'back', -60, LANE_Y);
       this.me.walkTo([{ x: 96, y: LANE_Y }], 'back', () => this.standStill());
-      this.setPhase('away', 6);
+      this.awaitTrain(6);
     }
     this.people.addChild(this.me.sprite);
 
@@ -218,9 +231,52 @@ export class PlatformScene implements Scene {
 
   // ── 列車 ──
 
+  /** 等下一班：連線時問伺服器，離線時 sec 秒後進站 */
+  private awaitTrain(sec: number) {
+    this.schedule = null;
+    if (!this.hooks.nextTrain) return this.setPhase('away', sec);
+    // 先放一段很長的等待，問到排班後再對齊
+    this.setPhase('away', 60);
+    void this.askNext(sec);
+  }
+
+  private async askNext(fallbackSec: number) {
+    if (this.asking) return;
+    this.asking = true;
+    const next = await this.hooks.nextTrain!().catch(() => null);
+    this.asking = false;
+    if (this.disposed || this.phase !== 'away') return;
+    if (!next) return this.setPhase('away', fallbackSec);
+    this.schedule = next;
+    this.toward = next.dir === 1 ? this.line.stations.length - 1 : 0;
+    const now = Date.now();
+    const toArrive = (next.arriveAt - now) / 1000;
+    const toClose = (next.departAt - now) / 1000 - CLOSE_SEC;
+    if (toArrive > ARRIVE_SEC) this.setPhase('away', toArrive - ARRIVE_SEC);
+    else if (toArrive > 0.3) this.setPhase('arriving', toArrive);
+    else if (toClose > 1) {
+      // 那班車已經停在月台上：直接開門
+      this.setPhase('open', toClose);
+      this.trainX = 0;
+    } else {
+      this.schedule = null;
+      this.setPhase('away', 2);
+    }
+  }
+
+  /** 連線排班時，各階段的長度以伺服器時間為準 */
+  private untilArrive() {
+    return this.schedule ? Math.max(0.3, (this.schedule.arriveAt - Date.now()) / 1000) : ARRIVE_SEC;
+  }
+
+  private untilClose() {
+    return this.schedule ? Math.max(1, (this.schedule.departAt - Date.now()) / 1000 - CLOSE_SEC) : devParams.dwellSec;
+  }
+
   private setPhase(phase: PlatformPhase, sec: number) {
     this.phase = phase;
     this.phaseT = 0;
+    this.phaseEnd = Date.now() + sec * 1000;
     this.phaseLen = sec;
     this.publish();
     const terminal = this.line.stations[this.toward];
@@ -247,16 +303,19 @@ export class PlatformScene implements Scene {
 
   private advance() {
     switch (this.phase) {
-      case 'away': return this.setPhase('arriving', ARRIVE_SEC);
-      case 'arriving': return this.setPhase('open', devParams.dwellSec);
+      case 'away':
+        // 連線時還沒問到排班就繼續等
+        if (this.hooks.nextTrain && !this.schedule) return void this.askNext(4);
+        return this.setPhase('arriving', this.untilArrive());
+      case 'arriving': return this.setPhase('open', this.untilClose());
       case 'open':
-        // 自己正要上車時，等伺服器回覆再關門
-        if (this.boarding || this.walkingToDoor) return;
+        // 自己正要上車時，等伺服器回覆再關門；離線時也等走向車門的人
+        if (this.boarding || (this.walkingToDoor && !this.schedule)) return;
         return this.setPhase('closing', CLOSE_SEC);
       case 'closing': return this.setPhase('leaving', LEAVE_SEC);
       case 'leaving':
         this.toward = this.randomToward();
-        return this.setPhase('away', 12 + Math.random() * 6);
+        return this.awaitTrain(12 + Math.random() * 6);
     }
   }
 
@@ -423,7 +482,7 @@ export class PlatformScene implements Scene {
       this.myRole = 'boarding';
       this.boarding = true;
       this.me.fadeOut();
-      void this.hooks.board(this.toward).then(ok => {
+      void this.hooks.board(this.toward, this.schedule?.train).then(ok => {
         if (ok) return;
         // 沒上成：回到月台上
         this.boarding = false;
@@ -526,8 +585,13 @@ export class PlatformScene implements Scene {
   update(dt: number) {
     const rm = this.reducedMotion.matches;
     this.time += dt;
-    this.phaseT += dt;
-    if (this.phaseT >= this.phaseLen) this.advance();
+    // 背景期間錯過的階段一次補上（暫停等待中的階段不會換，就停下來）
+    for (let i = 0; i < 6 && Date.now() >= this.phaseEnd; i++) {
+      const before = this.phase;
+      this.advance();
+      if (this.phase === before) break;
+    }
+    this.phaseT = this.phaseLen - Math.max(0, this.phaseEnd - Date.now()) / 1000;
     const due = this.timers.filter(t => t.at <= this.time);
     if (due.length) {
       this.timers = this.timers.filter(t => t.at > this.time);
@@ -589,6 +653,7 @@ export class PlatformScene implements Scene {
   }
 
   dispose() {
+    this.disposed = true;
     const art = this.art;
     requestAnimationFrame(() => {
       this.world.destroy({ children: true });

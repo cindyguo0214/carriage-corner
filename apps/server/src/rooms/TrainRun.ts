@@ -1,9 +1,12 @@
 // 一列車：共用同一個列車時鐘的 CARS 節車廂（docs/PRD.md §7.3）。到站、發車由列車統一驅動，各節車廂各自處理乘客。
-import { CARS, LINES, segmentBetween, type LineDef, type LineId, type TrainSnapshot } from '@cc/shared';
+import { CARS, LINES, segmentBetween, type LineDef, type LineId, type PlatformArrival, type TrainSnapshot } from '@cc/shared';
 import type { Config } from '../config';
 import { Room, type Emit } from './Room';
 
 interface Leg { from: number; to: number; departAt: number; arriveAt: number }
+
+/** 從某站加開：在 arriveAt 停靠 station，離站後往 dir 方向開 */
+export interface TrainStart { station: number; dir: 1 | -1; arriveAt: number }
 
 export class TrainRun {
   readonly line: LineDef;
@@ -22,19 +25,43 @@ export class TrainRun {
     private cfg: Config,
     emitTo: (roomId: string) => Emit,
     private onDispose: (run: TrainRun) => void,
+    start?: TrainStart,
   ) {
     this.line = LINES[lineId];
     const n = this.line.stations.length;
-    const from = Math.floor(Math.random() * (n - 1));
     const runMs = this.randomRunMs();
-    // 新列車從行駛途中開始，玩家一上車就看到窗外在動
-    const departAt = Date.now() - runMs * 0.3;
-    this.leg = { from, to: from + 1, departAt, arriveAt: departAt + runMs };
+    if (start) {
+      // 從上一站開過來；終點站則是從另一側進站、停妥後折返
+      const prev = start.station - start.dir;
+      const from = prev >= 0 && prev < n ? prev : start.station + start.dir;
+      this.leg = { from, to: start.station, departAt: start.arriveAt - runMs, arriveAt: start.arriveAt };
+    } else {
+      // 斷線重連時的分流：從行駛途中開始，玩家一上車就看到窗外在動
+      const from = Math.floor(Math.random() * (n - 1));
+      const departAt = Date.now() - runMs * 0.3;
+      this.leg = { from, to: from + 1, departAt, arriveAt: departAt + runMs };
+    }
     this.cars = Array.from({ length: CARS }, (_, i) => {
       const roomId = `${id}/${i + 1}`;
       return new Room(roomId, i + 1, this, cfg, emitTo(roomId));
     });
     this.scheduleArrival();
+  }
+
+  /** 離開目前這段的終點站之後往哪個方向（終點站折返） */
+  get nextDir(): 1 | -1 {
+    const dir = this.leg.to > this.leg.from ? 1 : -1;
+    const next = this.leg.to + dir;
+    return next < 0 || next >= this.line.stations.length ? (-dir as 1 | -1) : dir;
+  }
+
+  /**
+   * 這班車接下來會不會停靠 station：正停在這站、或正開往這站。
+   * 再下一站以後的時間要等發車才決定（每段行駛時間隨機），所以不算。
+   */
+  stopAt(station: number): PlatformArrival | null {
+    if (this.disposed || this.leg.to !== station) return null;
+    return { train: this.id, arriveAt: this.leg.arriveAt, departAt: this.leg.arriveAt + this.dwellMs, dir: this.nextDir };
   }
 
   get realCount() {
@@ -83,7 +110,9 @@ export class TrainRun {
 
   private scheduleArrival() {
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.arrive(), Math.max(0, this.leg.arriveAt - Date.now()));
+    // 加開列車在進站時刻之後才開出：當場就停在月台、車門開著
+    if (this.leg.arriveAt <= Date.now()) return this.arrive();
+    this.timer = setTimeout(() => this.arrive(), this.leg.arriveAt - Date.now());
   }
 
   private arrive() {
@@ -94,14 +123,12 @@ export class TrainRun {
     } else {
       this.emptyStations = 0;
     }
-    this.timer = setTimeout(() => this.depart(), this.dwellMs);
+    this.timer = setTimeout(() => this.depart(), Math.max(0, this.leg.arriveAt + this.dwellMs - Date.now()));
   }
 
   private depart() {
-    const n = this.line.stations.length;
     const from = this.leg.to;
-    let dir = this.leg.to > this.leg.from ? 1 : -1;
-    if (from + dir < 0 || from + dir >= n) dir = -dir; // 終點站折返
+    const dir = this.nextDir;
     const now = Date.now();
     this.leg = { from, to: from + dir, departAt: now, arriveAt: now + this.randomRunMs() };
     this.legNo++;
