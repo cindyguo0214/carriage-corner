@@ -235,11 +235,12 @@ export class Passengers {
     const self = this.selfPid();
     for (const p of this.list) {
       const { x, y } = p.actor.headTop;
-      out.push({ id: p.pid, name: p.actor.look.name, x, y, alpha: p.actor.sprite.alpha, self: p.pid === self });
+      const mine = p.pid === self;
+      out.push({ id: p.pid, name: p.actor.look.name, x, y, alpha: p.actor.sprite.alpha, self: mine, who: mine ? undefined : p.npc ? 'npc' : 'real' });
     }
     for (const a of this.leaving) {
       const { x, y } = a.headTop;
-      out.push({ id: `${a.id}~`, name: a.look.name, x, y, alpha: a.sprite.alpha, self: false });
+      out.push({ id: `${a.id}~`, name: a.look.name, x, y, alpha: a.sprite.alpha, self: false, who: a.look.npc ? 'npc' : 'real' });
     }
   }
 

@@ -555,7 +555,7 @@ export class PlatformScene implements Scene {
   labels(out: Label[]) {
     const push = (a: Actor, self: boolean) => {
       const { x, y } = a.headTop;
-      out.push({ id: a.id, name: a.look.name, x, y, alpha: a.sprite.alpha, self });
+      out.push({ id: a.id, name: a.look.name, x, y, alpha: a.sprite.alpha, self, who: self ? undefined : 'npc' });
     };
     this.npcs.forEach(n => push(n.actor, false));
     push(this.me, true);

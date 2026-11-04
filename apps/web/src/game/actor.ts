@@ -19,6 +19,8 @@ export interface Label {
   y: number;
   alpha: number;
   self: boolean;
+  /** 別人的名字：real 是同車的真人（名字旁亮一盞小燈），npc 是系統乘客（標籤略淡）（docs/PRD.md §24.1） */
+  who?: 'real' | 'npc';
   /** 互動時頭上浮起的字（嗶！、♪、📜） */
   pop?: boolean;
   /** 通道門、轉乘連通道的指示牌：靠左或靠右對齊、可以點；accent 是框線色（轉乘用目標路線色） */
