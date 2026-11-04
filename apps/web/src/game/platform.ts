@@ -10,7 +10,8 @@ import { DOORS, H, W } from './layout';
 import { hexToNum, PALETTES } from './palette';
 import {
   BENCH_H, BENCH_SEAT_DX, BENCH_TOP, BENCH_W, BENCHES, buildPlatformArt, CAR_GAP, CAR_W, CEIL_H, FLOOR_TOP,
-  GATE_TOP, PSD_BOTTOM, PSD_TOP, TRAIN_DOOR_H, TRAIN_DOOR_TOP, TRAIN_TOP, type PlatformArt,
+  GATE_TOP, PSD_BOTTOM, PSD_TOP, TRAIN_DOOR_H, TRAIN_DOOR_TOP, TRAIN_TOP, XFER_SLOTS, XFER_TOP, XFER_W, xferStairs,
+  type PlatformArt,
 } from './platformArt';
 import type { Scene } from './scene';
 
@@ -33,10 +34,13 @@ const ME = 'me';
 
 type Role = 'queue' | 'bench' | 'walker' | 'boarding' | 'leaving';
 interface Npc { actor: Actor; role: Role; spot: string | null }
+interface Xfer { to: LineId; slot: (typeof XFER_SLOTS)[number]; sprite: Sprite }
 
 export interface PlatformHooks {
   /** 走進車門了：上車。回傳 false 代表沒上成（連線失敗等），玩家回到月台 */
   board(toward: number): Promise<boolean>;
+  /** 走下轉乘連通道了：換到另一條線的月台（docs/PRD.md §18.1） */
+  transfer(to: LineId): void;
 }
 
 export interface PlatformStart {
@@ -44,6 +48,8 @@ export interface PlatformStart {
   station: number;
   /** 剛下車：列車還停著、門開著，剩下幾毫秒關門；toward 是那班車的方向 */
   docked?: { leftMs: number; toward: number; fromDoor: number };
+  /** 從哪條線的轉乘連通道走上來 */
+  via?: LineId;
 }
 
 const doorCenter = (i: number) => DOORS[i].x + DOORS[i].w / 2;
@@ -70,6 +76,8 @@ export class PlatformScene implements Scene {
   private people = new Container();
   private benches: Sprite[] = [];
   private pillars = new Graphics();
+  /** 轉乘連通道：可轉乘的路線與樓梯口貼圖 */
+  private xfers: Xfer[] = [];
   private art: PlatformArt | null = null;
   private mode: Mode = 'night';
   private frames: CharacterFrames | undefined;
@@ -144,12 +152,26 @@ export class PlatformScene implements Scene {
     }
     this.pillars.zIndex = FLOOR_TOP + 14;
     this.people.addChild(this.pillars);
-    this.world.addChild(this.back, this.train, this.psd, psdLeafLayer, this.ceiling, this.floor, this.lights, this.people);
+    const xferLayer = new Container();
+    (this.line.stations[start.station].transfer ?? []).slice(0, XFER_SLOTS.length).forEach((to, i) => {
+      const sprite = new Sprite();
+      sprite.position.set(XFER_SLOTS[i].x, XFER_TOP);
+      xferLayer.addChild(sprite);
+      this.xfers.push({ to, slot: XFER_SLOTS[i], sprite });
+    });
+    this.world.addChild(this.back, this.train, this.psd, psdLeafLayer, this.ceiling, this.floor, xferLayer, this.lights, this.people);
 
     // ── 自己 ──
     const { name, gender, avatar } = store.getState();
     const docked = start.docked;
-    if (docked) {
+    const via = this.xfers.find(x => x.to === start.via);
+    if (via) {
+      // 從轉乘連通道的樓梯走上來
+      const sx = cellX(this.stairsCenter(via));
+      this.me = new Actor(ME, { name, gender, avatar }, 'walk', 'back', sx, XFER_TOP - FEET + 40);
+      this.me.walkTo([{ x: sx, y: LANE_Y + 4 }], 'back', () => this.standStill());
+      this.setPhase('away', 8);
+    } else if (docked) {
       // 剛從這班車下來：從車門走出來
       const dx = cellX(doorCenter(docked.fromDoor));
       this.me = new Actor(ME, { name, gender, avatar }, 'stand', 'front', dx, DOOR_Y);
@@ -187,6 +209,11 @@ export class PlatformScene implements Scene {
     if (this.start.station === 0) return n - 1;
     if (this.start.station === n - 1) return 0;
     return Math.random() < 0.5 ? 0 : n - 1;
+  }
+
+  private stairsCenter(x: Xfer) {
+    const st = xferStairs(x.slot.align === 'left');
+    return x.slot.x + st.x + st.w / 2;
   }
 
   // ── 列車 ──
@@ -332,6 +359,9 @@ export class PlatformScene implements Scene {
 
   tap(x: number, y: number) {
     if (this.myRole === 'boarding') return;
+    // 點樓梯口或轉乘指示牌：走下連通道
+    const xfer = this.xfers.find(t => x >= t.slot.x && x < t.slot.x + XFER_W && y >= XFER_TOP - 6);
+    if (xfer) return this.walkToTransfer(xfer);
     // 點車門：開著就上車
     const door = DOORS.findIndex(d => x >= d.x && x < d.x + d.w);
     if (door >= 0 && y >= PSD_TOP && y < FLOOR_TOP + 30) {
@@ -371,6 +401,18 @@ export class PlatformScene implements Scene {
     }
   }
 
+  private walkToTransfer(xfer: Xfer) {
+    this.leaveSeat();
+    this.walkingToDoor = false;
+    this.myRole = 'walk';
+    const sx = cellX(this.stairsCenter(xfer));
+    this.me.walkTo([{ x: this.me.sprite.x, y: Math.max(this.me.sprite.y, LANE_Y) }, { x: sx, y: LANE_Y + 4 }, { x: sx, y: XFER_TOP - FEET + 40 }], 'front', () => {
+      this.myRole = 'boarding';
+      this.me.fadeOut();
+      this.hooks.transfer(xfer.to);
+    });
+  }
+
   private walkIntoDoor(door: number) {
     this.leaveSeat();
     this.myRole = 'walk';
@@ -406,6 +448,19 @@ export class PlatformScene implements Scene {
     };
     this.npcs.forEach(n => push(n.actor, false));
     push(this.me, true);
+    for (const x of this.xfers) {
+      const to = LINES[x.to];
+      const left = x.slot.align === 'left';
+      out.push({
+        id: `xfer-${x.to}`,
+        name: left ? `❮ 往 ${to.zh} ${to.id}` : `往 ${to.zh} ${to.id} ❯`,
+        x: left ? x.slot.x + 2 : x.slot.x + XFER_W - 2,
+        y: XFER_TOP - 12,
+        alpha: 1,
+        self: false,
+        sign: { align: x.slot.align, accent: to.color, action: () => this.myRole !== 'boarding' && this.walkToTransfer(x) },
+      });
+    }
   }
 
   colors(mode: Mode) {
@@ -430,6 +485,7 @@ export class PlatformScene implements Scene {
     });
     this.psdLeaves.forEach((s, i) => (s.texture = art.psdLeaves[i % 2]));
     this.benches.forEach(b => (b.texture = art.bench));
+    this.xfers.forEach((x, i) => (x.sprite.texture = art.transfers[i]));
     this.drawPillars();
     if (old) requestAnimationFrame(() => artTextures(old).forEach(t => t.destroy(true)));
   }
@@ -551,5 +607,5 @@ export class PlatformScene implements Scene {
 }
 
 function artTextures(a: PlatformArt): Texture[] {
-  return [a.ceiling, a.back, a.car, ...a.carLeaves, a.psd, ...a.psdLeaves, a.floor, a.bench];
+  return [a.ceiling, a.back, a.car, ...a.carLeaves, a.psd, ...a.psdLeaves, a.floor, a.bench, ...a.transfers];
 }

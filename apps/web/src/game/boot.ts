@@ -1,6 +1,6 @@
 // 遊戲進入點：月台 ⇄ 車廂的旅程（docs/PRD.md 第 15 章）
 // 連線時上下車、換座位、換車廂都經過伺服器；連不上時全部在本機模擬（離線模式）。
-import { CARS, LINES, type SpotId } from '@cc/shared';
+import { CARS, LINES, transferIndex, type LineId, type SpotId } from '@cc/shared';
 import { mixer } from '../audio/AmbientMixer';
 import { bridge } from '../gameBridge';
 import type { NetLink } from '../net/session';
@@ -16,8 +16,9 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
   await stage.init(host);
   store.setState({ net: net ? 'online' : 'offline' });
   net?.onStatus(status => store.setState({ net: status }));
-  const lineId = store.getState().line;
-  const line = LINES[lineId];
+  // 轉乘後換線（docs/PRD.md §18.1）
+  let lineId = store.getState().line;
+  let line = LINES[lineId];
 
   const carriage = () => (stage.current?.kind === 'carriage' ? (stage.current as CarriageScene) : null);
   let busy = false;
@@ -25,6 +26,7 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
   const startRide = (scene: CarriageScene) => {
     store.setState({
       ride: {
+        line: lineId,
         boardedAt: Date.now(),
         fromIdx: scene.currentStation(),
         roomId: scene.trainId,
@@ -38,9 +40,35 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
 
   // ── 月台 ──
   // 換場景時都有載入畫面蓋著，所以不另外交叉淡化
-  const goPlatform = (station: number, docked?: { leftMs: number; toward: number; fromDoor: number }, transition = false) => {
-    stage.show(new PlatformScene({ lineId, station, docked }, { board: toward => board(station, toward) }), transition);
+  const goPlatform = (station: number, docked?: { leftMs: number; toward: number; fromDoor: number }, transition = false, via?: LineId) => {
+    const hooks = { board: (toward: number) => board(station, toward), transfer: (to: LineId) => void transfer(station, to) };
+    stage.show(new PlatformScene({ lineId, station, docked, via }, hooks), transition);
     store.setState({ selfState: 'idle', pomodoro: null, ui: { ...store.getState().ui, glowMenu: null, noteMenu: null, composerOpen: false } });
+  };
+
+  // ── 轉乘：從連通道走到另一條線的月台，不用出站 ──
+  // 月台上不在任何列車房間裡，所以換線只要記下新路線；下次上車時伺服器才分配那條線的列車
+  const transfer = async (station: number, to: LineId) => {
+    const idx = transferIndex(lineId, station, to);
+    if (idx < 0 || busy) return;
+    busy = true;
+    try {
+      const from = lineId;
+      const target = LINES[to];
+      mixer.playTransfer();
+      await loading.during(`正在穿過連通道，前往${target.zh}月台…`, Promise.resolve(), {
+        tip: `TPRT 提示：轉乘不用出站，跟著${target.zh}的 ${target.id} 路線色指標走就到了。`,
+        lineColor: target.color,
+        minMs: 2400,
+      });
+      lineId = to;
+      line = target;
+      store.setState({ line: to, station: idx });
+      goPlatform(idx, undefined, false, from);
+      actions.say(`這裡是${target.stations[idx].zh}，${target.zh}月台。｜${target.stations[idx].en}, ${target.en} platform.`);
+    } finally {
+      busy = false;
+    }
   };
 
   // ── 上車 ──

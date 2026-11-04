@@ -19,13 +19,13 @@ function buildStats(): TicketStats | null {
   const s = store.getState();
   const seat = s.ride?.seat ?? s.selfSeat;
   if (!s.ride || !seat || !bridge.game) return null;
-  const line = LINES[s.line];
+  const line = LINES[s.ride.line];
   // 已下車：用下車站；還在車上：此刻的站，剛上車還沒經過任何一站時寫「下一站」
   const now = s.ride.toIdx ?? bridge.game.currentStation();
   const toIdx = s.ride.toIdx === undefined && now === s.ride.fromIdx ? s.train.to : now;
   const endedAt = s.ride.endedAt ?? Date.now();
   return {
-    line: s.line,
+    line: s.ride.line,
     from: line.stations[s.ride.fromIdx].code,
     to: line.stations[toIdx].code,
     seat,

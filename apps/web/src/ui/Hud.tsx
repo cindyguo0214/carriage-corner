@@ -1,11 +1,12 @@
 // DOM 疊層：中文輸入、清晰文字與無障礙都在這裡處理，不畫進 canvas（docs/PRD.md §6.2）
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  LINES, looksLikeContact, NOTE_MAX_GRAPHEMES, splitGraphemes, type GlowKind, type PaxState,
+  LINES, looksLikeContact, NOTE_MAX_GRAPHEMES, splitGraphemes, type PaxState,
 } from '@cc/shared';
 import { mixer, type Channel } from '../audio/AmbientMixer';
 import { bridge } from '../gameBridge';
 import { actions, devParams, store, useApp, type PlatformPhase } from '../store';
+import { RadialMenu } from './RadialMenu';
 import { TicketModal } from './TicketModal';
 
 const STATES: { state: PaxState; icon: string; label: string }[] = [
@@ -13,20 +14,6 @@ const STATES: { state: PaxState; icon: string; label: string }[] = [
   { state: 'music', icon: '🎧', label: '聽音樂' },
   { state: 'read', icon: '📖', label: '專注模式' },
   { state: 'sleep', icon: '😴', label: '補眠' },
-];
-
-/** 對其他乘客的互動（docs/PRD.md 第 17 章）：依對方此刻的狀態調整說明，蓋小毯只能給正在補眠的人 */
-const GLOWS: {
-  kind: GlowKind;
-  icon: string;
-  title: string;
-  hint: (state: PaxState) => string;
-  enabled?: (state: PaxState) => boolean;
-}[] = [
-  { kind: 'beep', icon: '🪪', title: '嗶卡默契', hint: () => '刷一下隨行卡打招呼' },
-  { kind: 'wave', icon: '🎵', title: '同頻波紋', hint: st => (st === 'music' ? '一起跟著音樂跳動 3 秒' : '送上一點溫暖微光') },
-  { kind: 'blanket', icon: '💤', title: '蓋上小毯', hint: st => (st === 'sleep' ? '幫補眠的人蓋上小毯子' : '對方補眠時才能蓋'), enabled: st => st === 'sleep' },
-  { kind: 'fortune', icon: '📜', title: '遞幸運籤', hint: () => '送一張今日小吉籤' },
 ];
 
 const CHANNELS: { ch: Channel; icon: string; label: string }[] = [
@@ -64,7 +51,7 @@ export function Hud() {
         <Subtitle />
         <BottomBar />
       </div>
-      <GlowMenu />
+      <RadialMenu />
       <NoteMenu />
       <NoteComposer />
       <TicketModal />
@@ -244,8 +231,15 @@ function BottomBar() {
   const mixerOpen = useApp(s => s.ui.mixerOpen);
   return (
     <div className="relative flex flex-col items-center">
-      {mixerOpen && <MixerPanel />}
-      {scene === 'platform' ? <PlatformBar /> : <CarriageBar />}
+      {mixerOpen && (
+        <>
+          {/* 點畫面其他地方就收起；這一下不會穿透到遊戲畫面（不會順便走路或點到人） */}
+          <div className="pointer-events-auto fixed inset-0" aria-hidden onClick={() => actions.setUi({ mixerOpen: false })} />
+          <MixerPanel />
+        </>
+      )}
+      {/* 疊在透明遮罩上面：開著面板時底部按鈕照樣能按 */}
+      <div className="relative">{scene === 'platform' ? <PlatformBar /> : <CarriageBar />}</div>
     </div>
   );
 }
@@ -274,9 +268,10 @@ function BarButton({
 function PlatformBar() {
   const theme = useTheme();
   const hasRide = useApp(s => !!s.ride);
+  const canTransfer = useApp(s => !!LINES[s.line].stations[s.platform.station]?.transfer?.length);
   return (
     <nav aria-label="月台" className={`pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded p-1.5 ${theme.panel}`}>
-      <span className="px-2 text-xs opacity-80">點長椅坐下・車門開了點車門上車</span>
+      <span className="px-2 text-xs opacity-80">點長椅坐下・車門開了點車門上車{canTransfer && '・點轉乘指標換線'}</span>
       <span className="mx-1 h-8 w-px bg-current opacity-20" aria-hidden />
       <ExtraButtons ticket={hasRide} />
     </nav>
@@ -422,11 +417,18 @@ function DndToggle() {
   const dnd = useApp(s => s.dnd);
   return (
     <button
-      aria-pressed={dnd}
+      role="switch"
+      aria-checked={dnd}
       onClick={() => store.setState({ dnd: !dnd })}
-      className={`mt-3 w-full rounded px-2 py-1 text-left ${dnd ? theme.chipOn : theme.chip}`}
+      className={`mt-3 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left ${dnd ? theme.chipOn : theme.chip}`}
     >
-      🔕 勿擾：{dnd ? '不接收別人的微光' : '關閉'}
+      <span className="text-base leading-none" aria-hidden>{dnd ? '🔕' : '🔔'}</span>
+      <span className="flex flex-1 flex-col">
+        <span className="font-medium">勿擾模式：{dnd ? '開啟' : '關閉'}</span>
+        <span className="text-[11px] leading-snug opacity-75">
+          {dnd ? '別人的嗶卡、同頻、小毯、幸運籤都不會打擾你' : '會收到別人的嗶卡、同頻、小毯、幸運籤'}
+        </span>
+      </span>
     </button>
   );
 }
@@ -450,49 +452,6 @@ function NoteMenu() {
       <button role="menuitem" className={`rounded px-2.5 py-1.5 ${theme.chip}`} onClick={() => actions.setUi({ noteMenu: null, composerOpen: true })}>
         ✍ 寫自己的
       </button>
-    </div>
-  );
-}
-
-function GlowMenu() {
-  const theme = useTheme();
-  const menu = useApp(s => s.ui.glowMenu);
-  if (!menu) return null;
-  const send = (kind: GlowKind) => {
-    void bridge.game?.glow(menu.seat, kind);
-    actions.setUi({ glowMenu: null });
-  };
-  const x = Math.max(8, Math.min(menu.x - 150, window.innerWidth - 316));
-  const y = Math.max(8, Math.min(menu.y - 150, window.innerHeight - 200));
-  return (
-    <div
-      role="menu"
-      aria-label={`和 ${menu.name} 互動`}
-      className={`pointer-events-auto fixed w-[300px] rounded p-2 ${theme.panel}`}
-      style={{ left: x, top: y }}
-    >
-      <p className="mb-1.5 px-1 text-xs opacity-70">給 {menu.name}（對方不會知道是誰）</p>
-      <div className="grid grid-cols-2 gap-1.5">
-        {GLOWS.map((g, i) => {
-          const enabled = g.enabled?.(menu.state) ?? true;
-          return (
-            <button
-              key={g.kind}
-              role="menuitem"
-              autoFocus={i === 0}
-              disabled={!enabled}
-              className={`flex items-start gap-2 rounded px-2 py-1.5 text-left disabled:cursor-not-allowed disabled:opacity-40 ${theme.chip}`}
-              onClick={() => send(g.kind)}
-            >
-              <span className="text-lg leading-none" aria-hidden>{g.icon}</span>
-              <span className="flex flex-col">
-                <span className="font-medium">{g.title}</span>
-                <span className="text-[11px] leading-snug opacity-70">{g.hint(menu.state)}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }

@@ -51,7 +51,7 @@ export interface AppState {
   selfPid: string | null;
   selfSeat: SpotId | null;
   selfState: PaxState;
-  /** 勿擾：不接收別人送的微光 */
+  /** 勿擾：不接收別人送的四種互動（嗶卡、同頻、小毯、幸運籤） */
   dnd: boolean;
   /** 只有自己看得到的輕提示（例如有人點頭） */
   toast: { text: string; at: number } | null;
@@ -65,8 +65,8 @@ export interface AppState {
   received: Record<GlowKind, number>;
   /** 這趟最近收到的一支籤（FORTUNES 索引） */
   lastFortune: number | null;
-  /** 這趟旅程：車票明信片的素材，只存在本機。下車後 toIdx 記下下車站 */
-  ride: { boardedAt: number; fromIdx: number; toIdx?: number; endedAt?: number; seat?: SpotId; roomId: string; coRiders: number } | null;
+  /** 這趟旅程：車票明信片的素材，只存在本機。下車後 toIdx 記下下車站；line 記下搭的線（轉乘後 store.line 會換） */
+  ride: { line: LineId; boardedAt: number; fromIdx: number; toIdx?: number; endedAt?: number; seat?: SpotId; roomId: string; coRiders: number } | null;
   /** 自己最近一次寫在車窗上的話（可選擇印在車票上，不進公開連結） */
   myNote: string | null;
   ui: { mixerOpen: boolean; composerOpen: boolean; ticketOpen: boolean; glowMenu: GlowMenu | null; noteMenu: NoteMenu | null };

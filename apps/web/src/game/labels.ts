@@ -32,6 +32,7 @@ export class NameLabels {
       if (l.sign) {
         node.el.onclick = l.sign.action;
         node.el.style.setProperty('--nudge', l.sign.align === 'left' ? '-4px' : '4px');
+        if (l.sign.accent) node.el.style.setProperty('--sign', l.sign.accent);
       }
       // 名字：錨點在頭頂正中；指示牌：錨點在通道門內側邊緣
       const anchor = !l.sign ? 'translate(-50%, -100%)' : l.sign.align === 'left' ? 'translate(0, -50%)' : 'translate(-100%, -50%)';

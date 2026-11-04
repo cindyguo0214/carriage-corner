@@ -1,6 +1,6 @@
 // 月台占位美術（docs/PRD.md §2.5、§3）：站名、月台門、列車外觀、長椅都是原創設計，不臨摹任何真實車站
 import type { Texture } from 'pixi.js';
-import type { LineDef } from '@cc/shared';
+import { LINES, type LineDef } from '@cc/shared';
 import { DOORS, H, SEAT_W, SEAT_X0, W } from './layout';
 import { mix, paint, pixelText, rng, type Painter } from './paint';
 import type { Palette } from './palette';
@@ -26,6 +26,12 @@ export const BENCH_W = 140;
 export const BENCH_TOP = 300;
 export const BENCH_H = 38;
 export const BENCH_SEAT_DX = [24, 70, 116] as const;
+/** 轉乘連通道：月台下緣往下的樓梯口，旁邊立著目標路線色的轉乘指示牌。第一條轉乘線在右下角、第二條在左下角 */
+export const XFER_TOP = 284;
+export const XFER_W = 124;
+export const XFER_SLOTS = [{ x: 508, align: 'right' }, { x: 8, align: 'left' }] as const;
+/** 樓梯口（不含指示牌）在 XFER 貼圖內的 x 範圍 */
+export const xferStairs = (flip: boolean) => (flip ? { x: 4, w: 78 } : { x: 42, w: 78 });
 
 export interface PlatformArt {
   ceiling: Texture;
@@ -38,10 +44,13 @@ export interface PlatformArt {
   psdLeaves: [Texture, Texture];
   floor: Texture;
   bench: Texture;
+  /** 每條可轉乘路線一張：樓梯口＋指示牌 */
+  transfers: Texture[];
 }
 
 export function buildPlatformArt(pal: Palette, night: boolean, line: LineDef, station: number, underground: boolean): PlatformArt {
   const s = line.stations[station];
+  const transfers = (s.transfer ?? []).slice(0, XFER_SLOTS.length);
   const leafW = DOORS[0].w / 2 - 2;
   const psdLeafH = underground ? PSD_BOTTOM - PSD_TOP - 16 : PSD_BOTTOM - GATE_TOP;
   return {
@@ -56,6 +65,7 @@ export function buildPlatformArt(pal: Palette, night: boolean, line: LineDef, st
     psdLeaves: [0, 1].map(side => paint(leafW, psdLeafH, p => drawPsdLeaf(p, pal, side === 1, underground))) as [Texture, Texture],
     floor: paint(W, H - PSD_BOTTOM, p => drawFloor(p, pal)),
     bench: paint(BENCH_W, BENCH_H, p => drawBench(p, pal, line)),
+    transfers: transfers.map((id, i) => paint(XFER_W, H - XFER_TOP, p => drawTransfer(p, pal, LINES[id], XFER_SLOTS[i].align === 'left'))),
   };
 }
 
@@ -267,6 +277,41 @@ function drawFloor(p: Painter, pal: Palette) {
     for (const ax of [cx - 26, cx + 22]) arrow(p, ax, 18, -1, pal.ledOn);
     arrow(p, cx - 2, 26, 1, mix(pal.ledOn, pal.platformTile, 0.4));
   }
+}
+
+/** 往下的樓梯口：欄杆頂端漆上目標路線色，踏階越往下越暗；旁邊立一支轉乘指示牌 */
+function drawTransfer(p: Painter, pal: Palette, to: LineDef, flip: boolean) {
+  const h = H - XFER_TOP;
+  const { x, w } = xferStairs(flip);
+  // 開口與踏階
+  p.rect(x, 4, w, h - 4, pal.tunnelLo);
+  const steps = 7;
+  for (let i = 0; i < steps; i++) {
+    const y = 8 + i * 10;
+    const tone = mix(pal.platformTile, pal.tunnelLo, i / steps);
+    p.rect(x + 4, y, w - 8, 6, tone);
+    p.rect(x + 4, y + 6, w - 8, 1, mix(tone, '#ffffff', 0.15));
+  }
+  // 欄杆：三面圍起，開口朝鏡頭（往下走）
+  p.rect(x, 0, w, 4, pal.metal);
+  p.rect(x, 0, w, 1, pal.metalHi);
+  p.rect(x, 3, w, 1, to.color);
+  p.rect(x, 0, 3, h, pal.metal);
+  p.rect(x + w - 3, 0, 3, h, pal.metal);
+  for (let py = 10; py < h; py += 12) {
+    p.rect(x, py, 3, 2, pal.metalLo);
+    p.rect(x + w - 3, py, 3, 2, pal.metalLo);
+  }
+  // 指示牌：一支細柱，上面是路線色的方塊、路線代號與往下的箭頭
+  const sx = flip ? XFER_W - 36 : 2;
+  p.rect(sx + 15, 30, 3, h - 30, pal.metalLo);
+  p.rect(sx + 11, h - 3, 11, 3, pal.metal);
+  p.round(sx, 0, 34, 34, pal.led);
+  p.rect(sx + 3, 3, 28, 15, to.color);
+  pixelText(p, to.id, sx + 17, 5, 10, '#ffffff', { align: 'center', bold: true });
+  for (let i = 0; i < 4; i++) p.rect(sx + 13 + i, 21 + i, 8 - i * 2, 1, pal.ledOn);
+  p.rect(sx + 16, 26, 2, 2, pal.ledOn);
+  for (let i = 0; i < 3; i++) p.rect(sx + 12 + i, 28 + i, 10 - i * 2, 1, pal.ledOn);
 }
 
 function arrow(p: Painter, x: number, y: number, dir: 1 | -1, color: string) {

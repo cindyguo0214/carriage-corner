@@ -98,3 +98,10 @@ export function landmarksBetween(line: LineDef, from: number, to: number): Landm
   const set = new Set([...(line.stations[from].landmarks ?? []), ...(line.stations[to].landmarks ?? [])]);
   return [...set];
 }
+
+/** 轉乘站在另一條線上的索引：同名、且互列為轉乘的那一站；不能轉乘時為 -1（docs/PRD.md §18.1） */
+export function transferIndex(from: LineId, station: number, to: LineId): number {
+  const here = LINES[from].stations[station];
+  if (!here?.transfer?.includes(to)) return -1;
+  return LINES[to].stations.findIndex(s => s.zh === here.zh && s.transfer?.includes(from));
+}
