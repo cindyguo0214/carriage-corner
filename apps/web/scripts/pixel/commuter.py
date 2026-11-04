@@ -155,7 +155,7 @@ LEGS_F = grid([
 
 DX = 1  # 讓角色置中
 
-# ── 學生：米白襯衫＋燕麥色針織背心、低飽和磚紅書包 ──
+# ── 學生：米白襯衫＋燕麥色針織背心、背在背上的磚紅圓角書包（手抓的是書包背帶） ──
 TORSO_STUDENT = grid([
 #    0123456789012345678901
     '.....oooooowSSwoooo...',
@@ -170,14 +170,34 @@ TORSO_STUDENT = grid([
     '.oWwwwwwovvvvvvvvvvowo',
     '.oWwwwwwovvvvvvvvvvowo',
     '.oWWWWWWovvvvvvvvvvowo',
-    'ooooooooovvvvvvvvvvowo',
-    'ogggggggovvvvvvvvvvowo',
-    'oGyGGGyGovvvvvvvvvvowo',
-    'ogggggggovvvvvvvvvvoso',
-    'ogggggggouuuuuuuuuuoso',
-    'ogggggggouuuuuuuuuuoSo',
-    'oGGGGGGGowwwwwwwwwwooo',
-    'oooooooooooooooooooo..',
+    '.oooooooovvvvvvvvvvowo',
+    '..ovvvvvvvvvvvvvvvvowo',
+    '..oVvvvvvvvvvvvvvvvowo',
+    '..oVvvvvvvvvvvvvvvvoso',
+    '..ouuuuuuuuuuuuuuuuoso',
+    '..ouuuuuuuuuuuuuuuuoSo',
+    '..owwwwwwwwwwwwwwwwooo',
+    '..oooooooooooooooooo..',
+])
+
+# 背上的圓角書包：畫在身體後面，從背側（畫面左邊）露出輪廓
+BACKPACK = grid([
+#    012345678
+    '..ooooo..',
+    '.oqgggggo',
+    'oqgggggGo',
+    'oggggggGo',
+    'oGGGGGGGo',
+    'ogggyggGo',
+    'oGggggggo',
+    'oGggggggo',
+    'oGggggggo',
+    'oGggggggo',
+    'oGggggggo',
+    'oGggggggo',
+    'oGGgggggo',
+    '.oGGGGGo.',
+    '..ooooo..',
 ])
 # 背心側面與中線的織紋
 TORSO_STUDENT = [r[:13] + ('V' if 4 <= i <= 15 and r[13] == 'v' and i % 2 == 0 else r[13]) + r[14:17]
@@ -231,6 +251,22 @@ TORSO_HOODIE = grid([
     'oooooooooooooooooooo..',
 ])
 
+# 垂在後頸與肩上的帽兜：畫在身體後面，從背側露出圓弧輪廓與深色內裡
+HOOD = grid([
+#    012345678
+    '..ooooo..',
+    '.oQQQQQo.',
+    'oJQQQQQJo',
+    'oLJQQQJJo',
+    'oLJJJJJJo',
+    'oLJJJJJJo',
+    'oKJJJJJJo',
+    '.oKJJJJo.',
+    '.oKJJJJo.',
+    '..oKKJo..',
+    '...ooo...',
+])
+
 # ── 耳機族：陶土色輕便外套、米白條紋 T、深灰綠斜背包 ──
 TORSO_HEADPHONES = [
     r if i < 2 else r.replace('n', 'w').replace('w', 'z' if i % 2 else 'w')
@@ -250,19 +286,19 @@ def headphones(head_w, dx):
     """包耳式耳機：近側耳罩蓋在耳朵上，頭帶越過頭頂往遠側收進頭後（dx：女生頭左側多出的欄數）"""
     band = [(7, 9), (7, 8), (7, 7), (8, 6), (8, 5), (9, 4), (10, 3), (11, 2), (12, 2), (13, 1), (14, 1),
             (15, 1), (16, 1), (17, 2), (18, 2), (19, 3), (20, 4)]
-    cup = {(x, y) for x in range(6, 9) for y in range(11, 16)}
+    cup = {(x, y) for x in range(5, 9) for y in range(11, 16)}
     cells = {}
     for x, y in band:
         cells[(x, y)] = 'a'
     for x, y in cup:
         cells[(x, y)] = 'C' if x == 8 or y == 15 else 'c'
-    cells[(6, 11)] = 'A'  # 耳罩高光
+    cells[(5, 11)] = 'A'  # 耳罩高光
     out = dict(cells)
     for x, y in cells:
         for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
             if (nx, ny) not in cells and 0 <= nx < 22 and 0 <= ny < 20:
                 out[(nx, ny)] = 'o'
-    for corner in ((5, 10), (9, 10), (5, 16), (9, 16)):
+    for corner in ((4, 10), (9, 10), (4, 16), (9, 16)):
         out.pop(corner, None)
     rows = [['.'] * head_w for _ in range(20)]
     for (x, y), c in out.items():
@@ -274,17 +310,17 @@ OUTFITS = {
     'office': dict(torso=TORSO, legs={'f': LEGS_F, 'm': LEGS_M}),
     'student': dict(torso=TORSO_STUDENT, legs={'f': LEGS_F_STUDENT, 'm': LEGS_M}, pal={
         'v': '#b9a78c', 'V': '#a39177', 'u': '#a8967c',
-        'g': '#9c6b5f', 'G': '#7f5549', 'y': '#d1b27a', 't': '#7f5549',
-    }),
+        'g': '#9c6b5f', 'G': '#7f5549', 'q': '#b28377', 'y': '#d1b27a', 't': '#7f5549',
+    }, back=(BACKPACK, 16, 25)),
     'hoodie': dict(torso=TORSO_HOODIE, legs={'f': LEGS_PANTS, 'm': LEGS_PANTS}, pal={
         'J': '#7d8877', 'K': '#677161', 'L': '#95a08d', 'Q': '#5f6a5b', 'r': '#6f7a69', 'R': '#5c6657',
         'g': '#cdbb9c', 'G': '#b09d7f', 'y': '#8f8a73', 't': '#a8957a', **PANTS,
-    }),
+    }, back=(HOOD, 16, 23)),
     'headphones': dict(torso=TORSO_HEADPHONES, legs={'f': LEGS_PANTS, 'm': LEGS_PANTS}, phones=True, pal={
         'J': '#ad806b', 'K': '#926957', 'L': '#c2957f', 'z': '#7a8290',
         'g': '#636b66', 'G': '#4f5652', 'y': '#a9b0a8', 't': '#4f5652',
         'p': '#5f6b7a', 'P': '#4f5a68', 'k': '#5a5655', 'x': '#e9e1d3',
-        'a': '#e6dccb', 'A': '#f6f0e4', 'c': '#ddd1bd', 'C': '#b9ab95',
+        'a': '#bcb8b2', 'A': '#f6f0e4', 'c': '#ddd1bd', 'C': '#b9ab95',
     }),
 }
 HEADS = {'f': (HEAD_F, 17, 4), 'm': (HEAD_M, 21, 0)}  # 頭的字元圖、左上角 x、左側多出的欄數
@@ -296,6 +332,9 @@ def build(outfit, gender):
     img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
     legs = o['legs'][gender]
     paste(img, legs, 24 + DX, 64 - 2 - len(legs), pal)
+    if o.get('back'):  # 背在身後的書包、帽兜
+        back, bx, by = o['back']
+        paste(img, back, bx + DX, by, pal)
     paste(img, o['torso'], 20 + DX, 24, pal)
     paste(img, head, hx + DX, 4, pal)
     if o.get('phones'):
