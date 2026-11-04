@@ -4,7 +4,7 @@ import { Application, Container, Graphics, RenderTexture, Sprite, TextureStyle }
 import type { Mode } from '@cc/shared';
 import { store } from '../store';
 import type { Label } from './actor';
-import { buildCharacterAtlas, type CharacterFrames } from './characters';
+import { buildCharacterAtlas, characterArtReady, type CharacterFrames } from './characters';
 import { NameLabels } from './labels';
 import { H, MIN_PW, PH, PORTRAIT_WORLD_Y, PW, W } from './layout';
 import { hexToNum } from './palette';
@@ -56,6 +56,7 @@ export class Stage {
     });
     host.appendChild(this.app.canvas);
     this.labels = new NameLabels(host);
+    await characterArtReady;
     this.chars = buildCharacterAtlas(this.mode);
 
     this.worldInScreen.y = PORTRAIT_WORLD_Y;

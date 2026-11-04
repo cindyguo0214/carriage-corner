@@ -59,8 +59,8 @@ function renderPreview() {
   previewName.textContent = name || '你的名字';
   previewName.classList.toggle('preview__name--empty', !name);
   void charactersModule.then(({ paintPreview }) => {
-    const { avatar, gender, mode } = store.getState();
-    paintPreview(previewSprite.getContext('2d')!, avatar, gender, mode, previewFrame);
+    const { avatar, gender } = store.getState();
+    paintPreview(previewSprite.getContext('2d')!, avatar, gender, previewFrame);
   });
 }
 // 站著輕輕呼吸；減少動態效果時不動
