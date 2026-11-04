@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
-    "build:artifact": "vite build --mode artifact && node scripts/artifact-page.mjs"
+    "build:artifact": "vite build --mode artifact && node scripts/artifact-page.mjs",
+    "build:pages": "vite build --mode pages"
   },
   "dependencies": {
     "@cc/shared": "*",

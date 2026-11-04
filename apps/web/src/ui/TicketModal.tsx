@@ -9,10 +9,10 @@ import { copyText, isInAppBrowser, saveImage, shareImage, threadsIntentUrl } fro
 /** claude.ai Artifact 版：系統分享被擋，改用 downloads 能力存檔（iOS 會開分享表單） */
 const ARTIFACT = import.meta.env.VITE_TARGET === 'artifact';
 
-/** 沒有簽章連結時（離線、Artifact 版）車票指向的網址 */
+/** 沒有簽章連結時（離線、Artifact 與 Pages 版）車票指向的網址：發佈後的正式網址，預選同一條線 */
 function fallbackUrl(line: string) {
-  const configured = import.meta.env.VITE_SHARE_URL as string | undefined;
-  return configured || `${location.origin}${location.pathname}?line=${line}`;
+  const base = (import.meta.env.VITE_SHARE_URL as string | undefined) || `${location.origin}${location.pathname}`;
+  return `${base}?line=${line}`;
 }
 
 function buildStats(): TicketStats | null {

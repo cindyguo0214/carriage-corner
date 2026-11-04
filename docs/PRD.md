@@ -1018,6 +1018,7 @@ flowchart LR
 | 撕線下版面 | 分左右兩欄，中間以直虛線隔開：左欄是這段旅程（專注模式、收到的互動分兩行、幸運籤、今日成就、同車人數、車廂文案、車窗留言、序號），放不下的行以「…」收尾，行首不放「」。，」等標點；右欄是 QR Code，下方「掃碼搭一趟」與「Scan to ride」 |
 | 車廂文案 | 車票預覽下方的按鈕「🔁 換一句車廂文案」可換一句 |
 | 遊戲署名 | 票底（票身外）左邊是 TPRT 像素小標誌＋「車廂角落 CARRIAGE CORNER」字標，右邊是「免下載，現在就上車 · © 2026 Carriage Corner」；晨／夜配色各自調整對比 |
+| QR Code 網址 | 連線版是伺服器簽章的分享連結（§8.3）；離線版（Artifact、GitHub Pages）指向**發佈後的正式網址** `https://cindyguo0214.github.io/carriage-corner/?line=CX`（`VITE_SHARE_URL`），不指向 claude.ai Artifact |
 | 生成 | **全在用戶端**以 Canvas 2D 繪製（零伺服器成本），繪製前 `document.fonts.load()` 確保像素字型就緒 |
 
 ### 8.2 分享流程
