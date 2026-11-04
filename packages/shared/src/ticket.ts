@@ -79,6 +79,17 @@ export function taipeiParts(ms: number) {
   };
 }
 
+/** 班次：依實際上車時間（台北時間）分段，不跟遊戲的晨／夜畫面走 */
+export function serviceSlot(ms: number): { icon: string; zh: string } {
+  const h = Number(taipeiParts(ms).hh);
+  if (h < 5) return { icon: '🌙', zh: '深夜班次' };
+  if (h < 9) return { icon: '🌅', zh: '晨間班次' };
+  if (h < 12) return { icon: '☀️', zh: '上午班次' };
+  if (h < 17) return { icon: '🌤️', zh: '午後班次' };
+  if (h < 20) return { icon: '🌆', zh: '傍晚班次' };
+  return { icon: '🌃', zh: '夜間班次' };
+}
+
 /** 序號：No. CX0042-3B-1103-2149 */
 export function ticketSerial(t: Pick<TicketStats, 'room' | 'seat' | 'boardedAt' | 'minutes'>) {
   const p = taipeiParts(t.boardedAt + t.minutes * 60_000);
