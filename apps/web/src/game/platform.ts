@@ -335,7 +335,7 @@ export class PlatformScene implements Scene {
 
   private addNpc(x: number, y: number, role: Role, spot: string | null, anim: 'idle' | 'stand' | 'walk', view: View = 'back') {
     const who = npcIdentity([this.me?.look.name, ...this.npcs.map(n => n.actor.look.name)].filter(Boolean) as string[]);
-    const actor = new Actor(`npc${Math.random().toString(36).slice(2, 8)}`, who, anim, view, cellX(x), y);
+    const actor = new Actor(`npc${Math.random().toString(36).slice(2, 8)}`, { ...who, npc: true }, anim, view, cellX(x), y);
     this.people.addChild(actor.sprite);
     const npc: Npc = { actor, role, spot };
     this.npcs.push(npc);

@@ -75,7 +75,7 @@ export class Passengers {
   add(p: Passenger, fadeIn = true): Pax {
     const existing = this.get(p.pid);
     if (existing) return existing;
-    const actor = new Actor(p.pid, { name: p.name, gender: p.gender, avatar: p.avatar }, animOf(p.seat, p.state), viewOf(p.seat), seatX(p.seat), seatCellY(p.seat), fadeIn);
+    const actor = new Actor(p.pid, { name: p.name, gender: p.gender, avatar: p.avatar, npc: !!p.npc }, animOf(p.seat, p.state), viewOf(p.seat), seatX(p.seat), seatCellY(p.seat), fadeIn);
     (isStand(p.seat) ? this.standRow : p.seat[1] === 'A' ? this.backRow : this.frontRow).addChild(actor.sprite);
     const pax: Pax = {
       pid: p.pid, seat: p.seat, state: p.state, npc: !!p.npc, actor,

@@ -7,6 +7,8 @@ export interface Look {
   name: string;
   gender: Gender;
   avatar: AvatarId;
+  /** 系統 NPC：用偏淡的莫蘭迪色階畫（docs/PRD.md §24.1） */
+  npc?: boolean;
 }
 
 /** 名字標籤：world 座標，由 Stage 換算成螢幕位置 */
@@ -146,7 +148,8 @@ export class Actor {
       this.step++;
     }
     if (frames) {
-      this.sprite.texture = frames[this.look.avatar][this.look.gender][this.view][FRAMES[this.anim][sequence(this.anim, this.step)]];
+      const tree = this.look.npc ? frames.pale : frames;
+      this.sprite.texture = tree[this.look.avatar][this.look.gender][this.view][FRAMES[this.anim][sequence(this.anim, this.step)]];
     }
   }
 }

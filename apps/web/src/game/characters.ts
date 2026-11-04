@@ -38,28 +38,56 @@ const rowOf = (a: number, g: number, v: number) => (a * GENDERS.length + g) * 2 
 
 /** 夜間把角色壓暗、偏一點藍紫，和夜間車廂一致 */
 const NIGHT_TINT = [0.8, 0.78, 0.86] as const;
+/** 系統 NPC 偏淡的莫蘭迪色階（docs/PRD.md §24.1）：先褪一點彩度，再往燕麥色提亮 */
+const NPC_DESATURATE = 0.2;
+const NPC_LIFT = 0.14;
+const NPC_LIFT_TO = { morning: [232, 225, 213], night: [150, 145, 160] } as const;
 
 const atlasImage = loadImage(atlasUrl);
 /** 角色圖集載好了（進場景前要等） */
 export const characterArtReady = atlasImage.decode().catch(() => {});
 
-export type CharacterFrames = Record<AvatarId, Record<Gender, Record<View, Texture[]>>>;
+type FrameTree = Record<AvatarId, Record<Gender, Record<View, Texture[]>>>;
+/** 真人的貼圖；pale 是同一套動作、給系統 NPC 用的偏淡版本 */
+export type CharacterFrames = FrameTree & { pale: FrameTree };
 
 export function buildCharacterAtlas(mode: Mode): CharacterFrames {
+  const real = paintAtlas(mode, false);
+  return Object.assign(real, { pale: paintAtlas(mode, true) });
+}
+
+/** 釋放一整組貼圖（真人與 NPC 各自共用一張 atlas source） */
+export function destroyCharacterAtlas(frames: CharacterFrames) {
+  frames.office.m.front[0].destroy(true);
+  frames.pale.office.m.front[0].destroy(true);
+}
+
+function paintAtlas(mode: Mode, pale: boolean): FrameTree {
   const { canvas, ctx } = makeCanvas(CELL * COLUMNS, CELL * ALL_AVATARS.length * GENDERS.length * 2);
   if (atlasImage.complete && atlasImage.naturalWidth) ctx.drawImage(atlasImage, 0, 0);
-  if (mode === 'night') {
+  if (mode === 'night' || pale) {
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const d = img.data;
+    const lift = NPC_LIFT_TO[mode];
     for (let i = 0; i < d.length; i += 4) {
-      d[i] *= NIGHT_TINT[0];
-      d[i + 1] *= NIGHT_TINT[1];
-      d[i + 2] *= NIGHT_TINT[2];
+      if (!d[i + 3]) continue;
+      if (mode === 'night') {
+        d[i] *= NIGHT_TINT[0];
+        d[i + 1] *= NIGHT_TINT[1];
+        d[i + 2] *= NIGHT_TINT[2];
+      }
+      if (pale) {
+        const y = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+        for (let c = 0; c < 3; c++) {
+          const v = d[i + c] + (y - d[i + c]) * NPC_DESATURATE;
+          d[i + c] = v + (lift[c] - v) * NPC_LIFT;
+        }
+      }
     }
     ctx.putImageData(img, 0, 0);
   }
   const source = new CanvasSource({ resource: canvas });
-  const out = {} as CharacterFrames;
+  const out = {} as FrameTree;
   ALL_AVATARS.forEach((avatar, a) => {
     out[avatar] = { m: {}, f: {} } as Record<Gender, Record<View, Texture[]>>;
     GENDERS.forEach((gender, g) => {

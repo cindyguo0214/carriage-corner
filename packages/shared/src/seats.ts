@@ -1,9 +1,11 @@
 import { PRIORITY_SEATS, SEATS, type SeatId, type SpotId } from './protocol';
 
-/** 理想密度：一般座 8 個 */
+/** 舒適分流線：一節車廂的真人到 8 人就開始分流，大家都能隔一個位子坐（docs/PRD.md §24.2） */
 export const SOFT_CAP = 8;
-/** 絕對上限：含博愛座 12 個 */
+/** 座位上限：12 個實體座位（含 4 個博愛座）坐滿，座位區就飽和；分流與加開新車以這條線為準 */
 export const HARD_CAP = 12;
+/** 站立上限：座位滿了之後，走道上還有 S1～S6 六個拉吊環的站位（從月台搭上這班車、或走到隔壁車廂時用） */
+export const STAND_CAP = HARD_CAP + 6;
 
 const seatDistance = (a: SeatId, b: SeatId) => (a[1] !== b[1] ? 3 : Math.abs(Number(a[0]) - Number(b[0])));
 const isSeat = (s: SpotId): s is SeatId => s[0] !== 'S';
