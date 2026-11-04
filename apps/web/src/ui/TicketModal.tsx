@@ -1,4 +1,4 @@
-// 🎫 車票明信片：預覽、換一句語錄、選擇是否印上自己的車窗留言、分享（docs/PRD.md §8）
+// 🎫 車票明信片：預覽、換一句車廂文案、選擇是否印上自己的車窗留言、分享（docs/PRD.md §8）
 import { useEffect, useMemo, useState } from 'react';
 import { LINES, QUOTES, shareText, ticketSerial, type TicketStats } from '@cc/shared';
 import { bridge } from '../gameBridge';
@@ -141,7 +141,7 @@ function TicketDialog() {
         {inApp && <p className="text-center text-xs opacity-80">長按上方圖片即可儲存，再到 Threads 發文附上。</p>}
 
         <div className="flex flex-wrap gap-2 text-sm">
-          <button className={`rounded px-3 py-1.5 ${chip}`} onClick={() => setQuote(q => q + 1)}>🔁 換一句</button>
+          <button className={`rounded px-3 py-1.5 ${chip}`} onClick={() => setQuote(q => q + 1)}>🔁 換一句車廂文案</button>
           {myNote && (
             <label className={`flex cursor-pointer items-center gap-1.5 rounded px-3 py-1.5 ${chip}`}>
               <input type="checkbox" checked={withNote} onChange={e => setWithNote(e.target.checked)} />

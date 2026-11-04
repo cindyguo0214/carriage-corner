@@ -2,7 +2,7 @@
 // 像素圖層畫在 216×270，再以 Nearest 放大 5 倍；文字直接畫在全解析度上保持清晰。
 import qrcode from 'qrcode-generator';
 import {
-  companionLine, fortuneAt, kindnessLine, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
+  companionLine, fortuneAt, kindnessLine, LINES, OPERATOR, PASS_CARDS, quoteOf, serviceSlot, stationByCode, taipeiParts, ticketSerial,
   type Mode, type PassCardId, type TicketStats,
 } from '@cc/shared';
 import { makeCanvas, mix, Painter } from '../game/paint';
@@ -87,61 +87,91 @@ export function drawTicket({ stats, shareUrl, note }: TicketView): HTMLCanvasEle
   const on = taipeiParts(stats.boardedAt);
   const off = taipeiParts(stats.boardedAt + stats.minutes * 60_000);
   text(`日期　${on.y}.${String(on.mo).padStart(2, '0')}.${String(on.d).padStart(2, '0')}（${on.wd}）`, L, 660, 36, pal.ink);
-  text(stats.mode === 'night' ? '🌃 夜間班次' : '🌅 晨間班次', R, 660, 36, pal.ink, { align: 'right' });
+  const slot = serviceSlot(stats.boardedAt);
+  text(`${slot.icon} ${slot.zh}`, R, 660, 36, pal.ink, { align: 'right' });
   text(`乘車　${on.hh}:${on.mm} → ${off.hh}:${off.mm}（${stats.minutes} 分）`, L, 740, 36, pal.ink);
 
-  // 撕線以下：這段旅程
+  // 撕線以下分左右兩欄：左邊是這段旅程，右邊是 QR code 與「掃碼搭一趟」
+  const COL = 560;
   const r = stats.received;
-  text(`📖 專注模式 ×${stats.pomodoros}`, L, 885, 36, pal.ink, { bold: true });
-  text(`🪪 嗶卡 ×${r.beep}　🎵 波紋 ×${r.wave}　💤 小毯 ×${r.blanket}　📜 籤 ×${r.fortune}`, L, 938, 30, pal.ink);
-  let y = 990;
+  text(`📖 專注模式 ×${stats.pomodoros}`, L, 880, 34, pal.ink, { bold: true });
+  text(`🪪 嗶卡 ×${r.beep}　🎵 波紋 ×${r.wave}`, L, 928, 28, pal.ink);
+  text(`💤 小毯 ×${r.blanket}　📜 籤 ×${r.fortune}`, L, 968, 28, pal.ink);
+  let y = 1012;
   if (stats.fortune !== null) {
     const f = fortuneAt(stats.fortune);
-    text(`收到的籤：「${f.text}」${f.grade}`, L, y, 30, pal.accent, { bold: true });
-    y += 42;
+    for (const l of wrap(ctx, `收到的籤：「${f.text}」${f.grade}`, COL, `700 26px ${FONT}`)) {
+      text(l, L, y, 26, pal.accent, { bold: true });
+      y += 38;
+    }
   }
-  // 今日成就：讓過座才印（docs/PRD.md 第 20 章）；右邊有 QR code，太長就換行
+  // 今日成就：讓過座才印（docs/PRD.md 第 20 章）
   const kind = kindnessLine(stats);
   if (kind) {
-    for (const l of wrap(ctx, kind, 620, `700 28px ${FONT}`)) {
-      text(l, L, y, 28, pal.accent, { bold: true });
-      y += 40;
+    for (const l of wrap(ctx, kind, COL, `700 26px ${FONT}`)) {
+      text(l, L, y, 26, pal.accent, { bold: true });
+      y += 38;
     }
   }
   text(companionLine(stats.coRiders), L, y, 28, pal.muted);
 
-  y += 54;
-  for (const l of wrap(ctx, `「${quoteOf(stats)}」`, 620, `700 36px ${FONT}`)) {
-    text(l, L - 18, y, 36, pal.accent, { bold: true });
-    y += 52;
-  }
-  if (note) {
-    // 序號在 y=1240：放不下的行併成一行並以「…」結尾
-    const lines = wrap(ctx, `你在車窗上寫下：「${note}」`, 620, `28px ${FONT}`);
-    const room = Math.max(1, Math.floor((1236 - y) / 42));
+  // 序號在 y=1240：引言與車窗留言放不下的行併成一行並以「…」結尾
+  const fit = (lines: string[], step: number) => {
+    const room = Math.max(1, Math.floor((1214 - y) / step));
     if (lines.length > room) {
       lines.length = room;
       lines[room - 1] = `${lines[room - 1].slice(0, -1)}…`;
     }
-    for (const l of lines) {
-      text(l, L, y + 6, 28, pal.muted);
-      y += 42;
+    return lines;
+  };
+  y += 50;
+  for (const l of fit(wrap(ctx, `「${quoteOf(stats)}」`, COL, `700 34px ${FONT}`), 48)) {
+    text(l, L - 18, y, 34, pal.accent, { bold: true });
+    y += 48;
+  }
+  if (note && y < 1214) {
+    for (const l of fit(wrap(ctx, `你在車窗上寫下：「${note}」`, COL, `28px ${FONT}`), 40)) {
+      text(l, L, y + 4, 28, pal.muted);
+      y += 40;
     }
   }
 
   text(`No. ${ticketSerial(stats)}`, L, 1240, 26, pal.muted);
-  drawQr(ctx, shareUrl, 770, 1040, 190);
 
-  text('車廂角落・免下載，現在就上車', TICKET_W / 2, 1315, 28, pal.muted, { align: 'center' });
+  // 右欄：直虛線隔開，QR code 置中，下方「掃碼搭一趟」
+  ctx.fillStyle = pal.dash;
+  for (let dy = 870; dy < 1260; dy += 18) ctx.fillRect(712, dy, 3, 10);
+  const qrX = 748;
+  const qrSize = 212;
+  drawQr(ctx, shareUrl, qrX, 900, qrSize);
+  text('掃碼搭一趟', qrX + qrSize / 2, 1144, 32, pal.ink, { bold: true, align: 'center' });
+  text('Scan to ride', qrX + qrSize / 2, 1186, 22, pal.muted, { align: 'center' });
+
+  // 票底的遊戲署名：TPRT 小標誌＋「車廂角落 CARRIAGE CORNER」字標，右邊是邀請與版權
+  const sign = pal.muted;
+  const lx = 78;
+  const ly = 1298;
+  ctx.fillStyle = sign;
+  for (const [x, y, w, h] of LOGO_RECTS) ctx.fillRect(lx + x * 3, ly + y * 3, w * 3, h * 3);
+  text('車廂角落', lx + 50, 1315, 30, pal.ink, { bold: true });
+  ctx.font = `700 30px ${FONT}`;
+  const zhW = ctx.measureText('車廂角落').width;
+  ctx.letterSpacing = '4px';
+  text('CARRIAGE CORNER', lx + 62 + zhW, 1317, 18, sign, { bold: true });
+  ctx.letterSpacing = '0px';
+  text('免下載，現在就上車 · © 2026 Carriage Corner', 1002, 1316, 20, sign, { align: 'right' });
   return canvas;
 }
+
+/** 行首不放的標點：讓它懸在上一行行尾（欄位右邊留有空間） */
+const HANGING = new Set('」』）。，、！？；：…'.split(''));
 
 function wrap(ctx: CanvasRenderingContext2D, s: string, width: number, font: string): string[] {
   ctx.font = font;
   const lines: string[] = [];
   let cur = '';
   for (const ch of s) {
-    if (ctx.measureText(cur + ch).width > width && cur) {
+    if (ctx.measureText(cur + ch).width > width && cur && !HANGING.has(ch)) {
       lines.push(cur);
       cur = ch;
     } else {
@@ -212,14 +242,14 @@ function drawPixels(p: Painter, pal: TicketPalette, lineColor: string, card: Pas
   p.rect(24, 176, 30, 1, mix(lineColor, pal.paper, 0.3));
 }
 
-/** 北城捷運 TPRT 原創幾何 T 字像素標誌（docs/PRD.md §3.3） */
+/** 北城捷運 TPRT 原創幾何 T 字像素標誌（docs/PRD.md §3.3）：[x, y, w, h]，12×11 格 */
+const LOGO_RECTS: [number, number, number, number][] = [
+  [0, 0, 12, 2], [4, 2, 4, 9],
+  ...[3, 5, 7, 9].flatMap(dy => [[2, dy, 1, 1], [9, dy, 1, 1]] as [number, number, number, number][]),
+];
+
 function drawLogo(p: Painter, x: number, y: number, color: string) {
-  p.rect(x, y, 12, 2, color);
-  p.rect(x + 4, y + 2, 4, 9, color);
-  for (const dy of [3, 5, 7, 9]) {
-    p.px(x + 2, y + dy, color);
-    p.px(x + 9, y + dy, color);
-  }
+  for (const [dx, dy, w, h] of LOGO_RECTS) p.rect(x + dx, y + dy, w, h, color);
 }
 
 /** 隨行卡卡面（docs/PRD.md §3.4）：原創像素圖案，不含任何品牌元素 */
