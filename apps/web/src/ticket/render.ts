@@ -147,7 +147,19 @@ export function drawTicket({ stats, shareUrl, note }: TicketView): HTMLCanvasEle
   text('掃碼搭一趟', qrX + qrSize / 2, 1144, 32, pal.ink, { bold: true, align: 'center' });
   text('Scan to ride', qrX + qrSize / 2, 1186, 22, pal.muted, { align: 'center' });
 
-  text('車廂角落・免下載，現在就上車', TICKET_W / 2, 1315, 28, pal.muted, { align: 'center' });
+  // 票底的遊戲署名：TPRT 小標誌＋「車廂角落 CARRIAGE CORNER」字標，右邊是邀請與版權
+  const sign = pal.muted;
+  const lx = 78;
+  const ly = 1298;
+  ctx.fillStyle = sign;
+  for (const [x, y, w, h] of LOGO_RECTS) ctx.fillRect(lx + x * 3, ly + y * 3, w * 3, h * 3);
+  text('車廂角落', lx + 50, 1315, 30, pal.ink, { bold: true });
+  ctx.font = `700 30px ${FONT}`;
+  const zhW = ctx.measureText('車廂角落').width;
+  ctx.letterSpacing = '4px';
+  text('CARRIAGE CORNER', lx + 62 + zhW, 1317, 18, sign, { bold: true });
+  ctx.letterSpacing = '0px';
+  text('免下載，現在就上車 · © 2026 Carriage Corner', 1002, 1316, 20, sign, { align: 'right' });
   return canvas;
 }
 
@@ -230,14 +242,14 @@ function drawPixels(p: Painter, pal: TicketPalette, lineColor: string, card: Pas
   p.rect(24, 176, 30, 1, mix(lineColor, pal.paper, 0.3));
 }
 
-/** 北城捷運 TPRT 原創幾何 T 字像素標誌（docs/PRD.md §3.3） */
+/** 北城捷運 TPRT 原創幾何 T 字像素標誌（docs/PRD.md §3.3）：[x, y, w, h]，12×11 格 */
+const LOGO_RECTS: [number, number, number, number][] = [
+  [0, 0, 12, 2], [4, 2, 4, 9],
+  ...[3, 5, 7, 9].flatMap(dy => [[2, dy, 1, 1], [9, dy, 1, 1]] as [number, number, number, number][]),
+];
+
 function drawLogo(p: Painter, x: number, y: number, color: string) {
-  p.rect(x, y, 12, 2, color);
-  p.rect(x + 4, y + 2, 4, 9, color);
-  for (const dy of [3, 5, 7, 9]) {
-    p.px(x + 2, y + dy, color);
-    p.px(x + 9, y + dy, color);
-  }
+  for (const [dx, dy, w, h] of LOGO_RECTS) p.rect(x + dx, y + dy, w, h, color);
 }
 
 /** 隨行卡卡面（docs/PRD.md §3.4）：原創像素圖案，不含任何品牌元素 */
