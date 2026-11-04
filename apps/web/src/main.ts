@@ -1,6 +1,6 @@
 import './styles.css';
 import {
-  LINES, looksLikeContact, stationIsUnderground, tidyName,
+  LINES, looksLikeContact, needsCare, stationIsUnderground, tidyName,
   type AvatarId, type Gender, type LineId, type PassCardId,
 } from '@cc/shared';
 import { mixer } from './audio/AmbientMixer';
@@ -85,6 +85,12 @@ function readName(): string | null {
   const name = tidyName(nameInput.value);
   if (!name) {
     nameError.textContent = '先取個名字吧，會顯示在你的頭上。';
+    nameInput.focus();
+    return null;
+  }
+  if (needsCare(name)) {
+    // 名字會顯示給全車看：換一個，順便留一條求助資源（伺服器端也會擋，離線時只靠這裡）
+    nameError.textContent = '換一個名字吧。最近如果很辛苦，可以撥 1925 安心專線（24 小時、免付費）找人聊聊。';
     nameInput.focus();
     return null;
   }
