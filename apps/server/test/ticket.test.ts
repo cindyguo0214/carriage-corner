@@ -23,7 +23,7 @@ after(() => server.close());
 
 const ticket = (patch: Partial<TicketStats> = {}): TicketStats => ({
   line: 'RV', from: 'RV01', to: 'RV04', seat: '3B', boardedAt: Date.now() - 47 * 60_000, minutes: 47,
-  pomodoros: 2, received: { beep: 1, wave: 0, blanket: 2, fortune: 1 }, fortune: 3, coRiders: 7, quote: 1, mode: 'night', card: 'boba', room: 'RV-0042',
+  pomodoros: 2, received: { beep: 1, wave: 0, blanket: 2, fortune: 1 }, fortune: 3, yielded: 1, yieldedTo: 'grandma', coRiders: 7, quote: 1, mode: 'night', card: 'boba', room: 'RV-0042',
   ...patch,
 });
 

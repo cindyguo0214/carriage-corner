@@ -99,6 +99,11 @@ export function landmarksBetween(line: LineDef, from: number, to: number): Landm
   return [...set];
 }
 
+/** 大站：轉乘站與兩端終點站。長者與家長 NPC 只在大站上車（docs/PRD.md 第 20 章） */
+export function isBigStation(line: LineDef, index: number): boolean {
+  return index === 0 || index === line.stations.length - 1 || !!line.stations[index]?.transfer?.length;
+}
+
 /** 轉乘站在另一條線上的索引：同名、且互列為轉乘的那一站；不能轉乘時為 -1（docs/PRD.md §18.1） */
 export function transferIndex(from: LineId, station: number, to: LineId): number {
   const here = LINES[from].stations[station];

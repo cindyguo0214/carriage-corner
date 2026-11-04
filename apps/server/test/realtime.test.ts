@@ -61,6 +61,8 @@ async function board(
   return { client, sid, snap: (res as { data: BoardedSnapshot }).data };
 }
 
+const PRIORITY = new Set(['1A', '1B', '6A', '6B']);
+
 const once = <E extends keyof ServerToClient>(c: Client, event: E, ms = 2000) =>
   new Promise<Parameters<ServerToClient[E]>[0]>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`timeout waiting for ${event}`)), ms);
@@ -112,9 +114,6 @@ describe('realtime server', () => {
     assert.equal(glow.to, b.snap.you.pid);
     await new Promise(r => setTimeout(r, 100));
     assert.equal(senderGotGlow, false);
-
-    const again = await a.client.timeout(2000).emitWithAck('glow:send', { to: b.snap.you.pid, kind: 'wave' });
-    assert.deepEqual(again, { ok: false, code: 'RATE_LIMITED' }, '對同一人 2 分鐘內只能送一次');
   });
 
   it('遞幸運籤：送出者與收到的人拿到同一支籤；小毯只能蓋給正在補眠的人', async () => {
@@ -338,6 +337,82 @@ describe('realtime server', () => {
     it('車站超出路線範圍時拒絕', async () => {
       const res = await open().timeout(2000).emitWithAck('platform:next', { line: 'CX', station: 7 });
       assert.deepEqual(res, { ok: false, code: 'BAD_REQUEST' });
+    });
+  });
+
+  describe('讓座與影子靜音（docs/PRD.md 第 20 章）', () => {
+    const silent = (c: Client, event: keyof ServerToClient, ms = 250) =>
+      new Promise<boolean>(resolve => {
+        const fn = () => resolve(false);
+        (c as unknown as { once(e: string, f: () => void): void }).once(event, fn);
+        setTimeout(() => resolve(true), ms);
+      });
+
+    it('博愛座坐滿時長者站著；坐在博愛座的人讓座後兩人換位，同車的人看到道謝', async () => {
+      const a = await board('RV');
+      const b = await board('RV');
+      assert.equal(a.snap.room.id, b.snap.room.id);
+      const room = server.rooms.get(a.snap.room.id)!;
+      // 讓 a 坐到博愛座 1A，其餘博愛座由長者坐滿
+      for (const s of ['1A', '1B', '6A', '6B'] as const) {
+        const someone = [...room.pax.values()].find(p => p.seat === s && p.pid !== a.snap.you.pid);
+        if (someone) room.pax.delete(someone.pid);
+      }
+      assert.deepEqual(await a.client.timeout(2000).emitWithAck('seat:move', { seat: '1A' }), { ok: true });
+      for (let i = 0; i < 3; i++) assert.ok(PRIORITY.has(room.boardSpecial('elder')!.seat));
+      const parent = room.boardSpecial('parent')!;
+      assert.equal(parent.seat, 'S1');
+      assert.equal(parent.avatar, 'parent');
+
+      const moves: { pid: string; seat: string }[] = [];
+      b.client.on('pax:move', m => moves.push(m));
+      const thanks = once(b.client, 'pax:thanks');
+      const res = await a.client.timeout(2000).emitWithAck('seat:yield', { to: parent.pid });
+      assert.deepEqual(res, { ok: true, data: { seat: 'S1' } });
+      assert.equal((await thanks).pid, parent.pid);
+      assert.equal(room.pax.get(parent.pid)!.seat, '1A');
+      assert.equal(room.pax.get(a.snap.you.pid)!.seat, 'S1');
+      assert.deepEqual(moves.sort((x, y) => x.pid.localeCompare(y.pid)), [
+        { pid: a.snap.you.pid, seat: 'S1' }, { pid: parent.pid, seat: '1A' },
+      ].sort((x, y) => x.pid.localeCompare(y.pid)));
+    });
+
+    it('大站人潮把座位（含博愛座）坐滿後，上車的長者只能站著', async () => {
+      const a = await board('CX');
+      const room = server.rooms.get(a.snap.room.id)!;
+      room.rush();
+      const seated = [...room.pax.values()].filter(p => !p.seat.startsWith('S')).length;
+      assert.equal(seated, 12);
+      assert.equal(room.boardSpecial('elder')!.seat, 'S1');
+    });
+
+    it('離博愛座太遠、或對方沒站著時不能讓座', async () => {
+      const a = await board('SK');
+      const room = server.rooms.get(a.snap.room.id)!;
+      const elder = room.boardSpecial('elder')!;
+      assert.ok(PRIORITY.has(elder.seat), '有空的博愛座就直接坐');
+      assert.deepEqual(await a.client.timeout(2000).emitWithAck('seat:yield', { to: elder.pid }), { ok: false, code: 'NO_TARGET' });
+    });
+
+    it('一直對同一個人互動：送出者照常成功，但多出來的被吸收；被擋 3 次後對誰都送不出去', async () => {
+      const a = await board('CX');
+      const b = await board('CX');
+      const c = await board('CX');
+      assert.equal(a.snap.room.id, c.snap.room.id);
+      const send = (to: string) => a.client.timeout(2000).emitWithAck('glow:send', { to, kind: 'beep' });
+      for (let i = 0; i < 2; i++) {
+        const got = once(b.client, 'glow');
+        assert.ok((await send(b.snap.you.pid)).ok);
+        await got;
+      }
+      for (let i = 0; i < 3; i++) {
+        const quiet = silent(b.client, 'glow');
+        assert.deepEqual(await send(b.snap.you.pid), { ok: true, data: { fortune: null } });
+        assert.ok(await quiet, '第 3 次以後不該送到');
+      }
+      const quiet = silent(c.client, 'glow');
+      assert.ok((await send(c.snap.you.pid)).ok);
+      assert.ok(await quiet, '影子靜音期間，換個人也送不出去');
     });
   });
 

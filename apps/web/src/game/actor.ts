@@ -21,6 +21,8 @@ export interface Label {
   pop?: boolean;
   /** 通道門、轉乘連通道的指示牌：靠左或靠右對齊、可以點；accent 是框線色（轉乘用目標路線色） */
   sign?: { align: 'left' | 'right'; action: () => void; accent?: string };
+  /** 只有自己看得到、很淡的可點提示（例如「🪑 讓座」） */
+  hint?: () => void;
 }
 
 /** 走路速度（px/s） */

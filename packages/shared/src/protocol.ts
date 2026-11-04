@@ -2,7 +2,11 @@
 
 export type LineId = 'CX' | 'RV' | 'SK'; // 北城捷運虛構路線：城心線／河岸線／雲橋線
 export type PassCardId = 'tile' | 'boba' | 'ricecooker' | 'mangoice'; // 隨行卡卡面
-export type AvatarId = 'office' | 'student' | 'hoodie' | 'headphone';
+/** 玩家可選的穿搭 */
+export type PlayerAvatar = 'office' | 'student' | 'hoodie' | 'headphone';
+/** 需要座位的特殊 NPC（docs/PRD.md 第 20 章）：拎著菜籃的長者、帶小朋友的家長 */
+export type SpecialKind = 'elder' | 'parent';
+export type AvatarId = PlayerAvatar | SpecialKind;
 export type Gender = 'm' | 'f';
 export type Bench = 'A' | 'B';
 export type SeatId = `${1 | 2 | 3 | 4 | 5 | 6}${Bench}`;
@@ -96,6 +100,8 @@ export interface ClientToServer {
   'platform:next': (req: { line: LineId; station: number }, ack: (res: Ack<PlatformArrival>) => void) => void;
   /** 停站開門時下車回到月台 */
   alight: (req: {}, ack: (res: Ack) => void) => void;
+  /** 讓座給站著的長者／家長：自己站到對方的站位，對方坐進自己的座位 */
+  'seat:yield': (req: { to: string }, ack: (res: Ack<{ seat: SpotId }>) => void) => void;
   /** 換到同一節車廂的空位，或站到走道上拉吊環 */
   'seat:move': (req: { seat: SpotId }, ack: (res: Ack) => void) => void;
   /** 經貫通道走到相鄰車廂：-1 往第 1 節、+1 往最後一節 */
@@ -114,6 +120,8 @@ export interface ServerToClient {
   'pax:leave': (p: { pid: string; reason: 'station' | 'transfer' }) => void;
   'pax:move': (p: { pid: string; seat: SpotId }) => void;
   'pax:state': (p: { pid: string; state: PaxState; since: number }) => void;
+  /** 被讓座的長者／家長坐下後道謝（頭上浮起「✨ 謝謝」） */
+  'pax:thanks': (p: { pid: string }) => void;
   glow: (g: { to: string; kind: GlowKind; at: number; fortune: number | null }) => void;
   'note:new': (n: WindowNote) => void;
   'note:gone': (n: { nid: string }) => void;
@@ -134,6 +142,10 @@ export const isStand = (spot: SpotId): spot is StandId => spot[0] === 'S';
 /** 位置所在的欄（1..6）：決定寫字時用哪一扇車窗 */
 export const spotColumn = (spot: SpotId) => Number(isStand(spot) ? spot[1] : spot[0]);
 export const PRIORITY_SEATS = new Set<SpotId>(['1A', '6A', '1B', '6B']);
+/** 博愛座所在的欄與隔壁欄：坐在這裡的人看得到「讓座」提示，也才能讓座（docs/PRD.md 第 20 章） */
+export const NEAR_PRIORITY_COLUMNS = new Set([1, 2, 5, 6]);
+/** 長者與家長沒有空的博愛座時，依序找這些站位 */
+export const SPECIAL_STANDS: StandId[] = ['S1', 'S6', 'S2', 'S5', 'S3', 'S4'];
 export const NOTE_MAX_GRAPHEMES = 15;
 export const NAME_MAX_GRAPHEMES = 8;
 /** 名字被過濾或留白時的替代名 */
@@ -142,4 +154,6 @@ export const FALLBACK_NAME = '旅人';
 export const CARS = 4;
 export const GLOW_KINDS: GlowKind[] = ['beep', 'wave', 'blanket', 'fortune'];
 export const PAX_STATES: PaxState[] = ['idle', 'music', 'read', 'sleep'];
-export const AVATARS: AvatarId[] = ['office', 'student', 'hoodie', 'headphone'];
+export const AVATARS: PlayerAvatar[] = ['office', 'student', 'hoodie', 'headphone'];
+export const SPECIAL_KINDS: SpecialKind[] = ['elder', 'parent'];
+export const isSpecial = (avatar: AvatarId): avatar is SpecialKind => avatar === 'elder' || avatar === 'parent';

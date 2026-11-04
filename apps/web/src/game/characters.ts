@@ -1,6 +1,6 @@
-// 乘客角色：64 × 64 cell，每個動作 2～4 幀（docs/PRD.md §2.3）。4 種穿搭 × 男／女 × 正面／背面。
+// 乘客角色：64 × 64 cell，每個動作 2～4 幀（docs/PRD.md §2.3）。4 種穿搭＋長者、家長（第 20 章）× 男／女 × 正面／背面。
 import { CanvasSource, type Texture } from 'pixi.js';
-import { AVATARS, type AvatarId, type Gender, type Mode, type PaxState } from '@cc/shared';
+import { AVATARS, SPECIAL_KINDS, type AvatarId, type Gender, type Mode, type PaxState } from '@cc/shared';
 import { atlasFrames, makeCanvas, mix, Painter } from './paint';
 import { outfitFor, PALETTES, shade, type Outfit, type Palette } from './palette';
 
@@ -25,6 +25,7 @@ export const FRAME_MS: Record<Anim, number> = { idle: 700, music: 400, read: 800
 export const STAND_RISE = 6;
 
 const COLUMNS = 17;
+const ALL_AVATARS: AvatarId[] = [...AVATARS, ...SPECIAL_KINDS];
 const GENDERS: Gender[] = ['m', 'f'];
 const VIEWS: View[] = ['front', 'back'];
 const ANIM_OF_COLUMN: [Anim, number][] = (Object.entries(FRAMES) as [Anim, number[]][]).flatMap(
@@ -35,11 +36,11 @@ export type CharacterFrames = Record<AvatarId, Record<Gender, Record<View, Textu
 
 export function buildCharacterAtlas(mode: Mode): CharacterFrames {
   const pal = PALETTES[mode];
-  const rows = AVATARS.length * GENDERS.length * VIEWS.length;
+  const rows = ALL_AVATARS.length * GENDERS.length * VIEWS.length;
   const { canvas, ctx } = makeCanvas(CELL * COLUMNS, CELL * rows);
   const p = new Painter(ctx);
   const rowOf = (a: number, g: number, v: number) => (a * GENDERS.length + g) * VIEWS.length + v;
-  AVATARS.forEach((avatar, a) =>
+  ALL_AVATARS.forEach((avatar, a) =>
     GENDERS.forEach((gender, g) =>
       VIEWS.forEach((view, v) => {
         const look: Look = { avatar, gender, view, o: outfitFor(avatar, gender, mode) };
@@ -51,7 +52,7 @@ export function buildCharacterAtlas(mode: Mode): CharacterFrames {
   );
   const source = new CanvasSource({ resource: canvas });
   const out = {} as CharacterFrames;
-  AVATARS.forEach((avatar, a) => {
+  ALL_AVATARS.forEach((avatar, a) => {
     out[avatar] = { m: {}, f: {} } as Record<Gender, Record<View, Texture[]>>;
     GENDERS.forEach((gender, g) => {
       out[avatar][gender] = {
@@ -93,7 +94,9 @@ function drawCharacter(p: Painter, ox: number, oy: number, look: Look, anim: Ani
   const bottomLo = shade(o.bottom, 0.86);
   const legs = wearsSkirt(look) ? mix(pal.skinLo, pal.shoe, 0.25) : bottomLo;
   const phones = avatar === 'headphone' ? o.acc : mix(o.hair, pal.metal, 0.5);
-  const longHair = gender === 'f';
+  const elder = avatar === 'elder';
+  // 長者一律短髮（阿嬤燙捲）
+  const longHair = gender === 'f' && !elder;
 
   // 下半身
   if (standing) {
@@ -206,10 +209,80 @@ function drawCharacter(p: Painter, ox: number, oy: number, look: Look, anim: Ani
     }
   }
 
+  if (elder && view === 'front') {
+    // 灰白捲髮／鴨舌帽、眼角的細紋
+    if (gender === 'f') { R(hx - 2, hy - 1, 18, 4, o.hair); R(hx - 2, hy + 3, 2, 5, o.hair); R(hx + 14, hy + 3, 2, 5, o.hair); }
+    else { R(hx - 1, hy - 1, 16, 3, o.acc); R(hx + 1, hy + 2, 14, 1, shade(o.acc, 0.8)); }
+    R(hx + 1, hy + 10, 1, 1, pal.skinLo); R(hx + 12, hy + 10, 1, 1, pal.skinLo);
+  } else if (elder) {
+    if (gender === 'f') R(hx - 2, hy - 1, 18, 5, o.hair);
+    else R(hx - 1, hy - 1, 16, 4, o.acc);
+  }
+  if (elder) drawBasket(R, look, anim, view, ty, bx, pal);
+  if (avatar === 'parent') drawChild(R, look, anim, view, pose, pal);
+
   if (anim === 'music') {
     R(hx - 1, hy - 2, 16, 2, phones);
     R(hx - 2, hy + 5, 3, 5, phones); R(hx + 13, hy + 5, 3, 5, phones);
   } else if (avatar === 'headphone') {
     R(26, ty - 2, 3, 3, phones); R(35, ty - 2, 3, 3, phones); // 掛在脖子上
+  }
+}
+
+type Rect = (x: number, y: number, w: number, h: number, c: string) => void;
+
+/** 長者的菜籃：站著時拎在左手，坐著時放在腿上（背面坐姿看不到） */
+function drawBasket(R: Rect, look: Look, anim: Anim, view: View, ty: number, bx: number, pal: Palette) {
+  const rattan = mix('#C9A46A', pal.wallShade, 0.2);
+  const weave = shade(rattan, 0.78);
+  const green = mix('#7FA98A', pal.wallShade, 0.15);
+  const standing = anim === 'stand' || anim === 'walk' || anim === 'hang';
+  if (standing) {
+    const x = bx - 10;
+    const y = ty + 21 + (anim === 'walk' ? 1 : 0);
+    R(x + 2, y - 4, 1, 4, weave); R(x + 9, y - 4, 1, 4, weave); R(x + 2, y - 5, 8, 1, weave);
+    R(x + 3, y - 3, 2, 4, green); R(x + 6, y - 4, 2, 5, green);
+    R(x, y, 12, 8, rattan);
+    R(x, y + 3, 12, 1, weave); R(x, y + 6, 12, 1, weave);
+    R(x + 4, y, 1, 8, weave);
+  } else if (view === 'front') {
+    R(25, 41, 14, 7, rattan);
+    R(25, 44, 14, 1, weave);
+    R(27, 37, 2, 4, green); R(31, 36, 2, 5, green); R(35, 38, 2, 3, green);
+  }
+  void look;
+}
+
+/** 家長牽著的小朋友：站著時在左邊牽手，坐著時坐在腿上（背面坐姿只露出頭） */
+function drawChild(R: Rect, look: Look, anim: Anim, view: View, pose: Pose, pal: Palette) {
+  const shirt = look.o.acc;
+  const hair = shade(look.o.hair, 1.05);
+  const standing = anim === 'stand' || anim === 'walk' || anim === 'hang';
+  const asleep = anim === 'sleep';
+  if (standing) {
+    const bob = anim === 'walk' ? [0, 1][pose.headDy % 2 === 0 ? 0 : 1] : 0;
+    const top = 33 + bob;
+    // 頭
+    R(9, top, 9, 8, view === 'front' ? pal.skin : hair);
+    R(9, top, 9, 3, hair);
+    if (view === 'front') { R(11, top + 5, 1, 1, pal.eye); R(15, top + 5, 1, 1, pal.eye); }
+    // 身體、舉起來牽著大人的手
+    R(9, top + 8, 9, 10, shirt);
+    R(18, top + 4, 2, 6, shirt); R(18, top + 3, 2, 2, pal.skin);
+    R(7, top + 9, 2, 6, shirt); R(7, top + 15, 2, 2, pal.skin);
+    const lift = anim === 'walk' ? [1, 0][pose.headDy % 2 === 0 ? 0 : 1] : 0;
+    R(10, top + 18, 3, 9 - lift, look.o.bottom); R(14, top + 18, 3, 9 - (1 - lift) * (anim === 'walk' ? 1 : 0), look.o.bottom);
+    R(10, 59, 3, 2, pal.shoe); R(14, 59, 3, 2, pal.shoe);
+  } else if (view === 'front') {
+    R(27, 29, 10, 8, pal.skin);
+    R(27, 29, 10, 3, hair);
+    if (asleep) { R(29, 34, 2, 1, pal.eye); R(33, 34, 2, 1, pal.eye); }
+    else { R(29, 34, 1, 1, pal.eye); R(34, 34, 1, 1, pal.eye); }
+    R(26, 37, 12, 10, shirt);
+    R(27, 47, 4, 6, look.o.bottom); R(33, 47, 4, 6, look.o.bottom);
+    R(27, 53, 4, 2, pal.shoe); R(33, 53, 4, 2, pal.shoe);
+  } else {
+    // 從背後看：小朋友的頭從大人肩膀旁冒出來
+    R(41, 24 + (asleep ? 2 : 0), 8, 7, hair);
   }
 }

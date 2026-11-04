@@ -2,8 +2,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import {
-  companionLine, fortuneAt, FORTUNES, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
-  type LineId, type SpotId, type TicketStats,
+  companionLine, fortuneAt, FORTUNES, kindnessLine, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
+  YIELD_TO, type LineId, type SpotId, type TicketStats,
 } from '@cc/shared';
 import { drawText, textWidth } from './font';
 import { Bitmap } from './png';
@@ -25,6 +25,9 @@ const TicketFields = z.object({
     fortune: z.number().int().min(0).max(999),
   }),
   fortune: z.number().int().min(0).max(FORTUNES.length - 1).nullable(),
+  // 讓座（第 20 章）：舊版用戶端不帶，視為沒讓座
+  yielded: z.number().int().min(0).max(99).default(0),
+  yieldedTo: z.enum(YIELD_TO as [string, ...string[]]).transform(s => s as TicketStats['yieldedTo']).nullable().default(null),
   coRiders: z.number().int().min(0).max(9999),
   quote: z.number().int().min(0).max(99),
   mode: z.enum(['morning', 'night']),
@@ -70,28 +73,32 @@ export class TicketSigner {
 // 分享連結越短越好：以陣列取代物件鍵名、時間以秒為單位的 36 進位表示，長度約為 JSON 物件的一半
 const CARDS = ['tile', 'boba', 'ricecooker', 'mangoice'] as const;
 // 版本 3：四種互動分開計次，加上最近收到的一支籤（-1 表示沒有）
+// 版本 4：最後再加上讓座次數與讓給誰（YIELD_TO 索引，-1 表示沒有）；版本 3 的連結照樣能開
 type Packed = [
-  3, string, string, string, string, string, number, number,
+  3 | 4, string, string, string, string, string, number, number,
   number, number, number, number, number,
   number, number, 0 | 1, number, string,
+  number?, number?,
 ];
 
 function pack(t: TicketStats): Packed {
   return [
-    3, t.line, t.from.slice(2), t.to.slice(2), t.seat, Math.floor(t.boardedAt / 1000).toString(36),
+    4, t.line, t.from.slice(2), t.to.slice(2), t.seat, Math.floor(t.boardedAt / 1000).toString(36),
     t.minutes, t.pomodoros,
     t.received.beep, t.received.wave, t.received.blanket, t.received.fortune, t.fortune ?? -1,
     t.coRiders, t.quote, t.mode === 'night' ? 1 : 0,
     CARDS.indexOf(t.card), t.room.slice(3),
+    t.yielded, t.yieldedTo ? YIELD_TO.indexOf(t.yieldedTo) : -1,
   ];
 }
 
 function unpack(a: Packed): TicketStats | null {
-  if (!Array.isArray(a) || a[0] !== 3) return null;
-  const [, line, from, to, seat, boarded, minutes, pomodoros, beep, wave, blanket, fortunes, fortune, coRiders, quote, night, card, room] = a;
+  if (!Array.isArray(a) || (a[0] !== 3 && a[0] !== 4)) return null;
+  const [, line, from, to, seat, boarded, minutes, pomodoros, beep, wave, blanket, fortunes, fortune, coRiders, quote, night, card, room, yielded = 0, yieldedTo = -1] = a;
   const parsed = TicketFields.safeParse({
     line, from: `${line}${from}`, to: `${line}${to}`, seat, boardedAt: parseInt(boarded, 36) * 1000,
-    minutes, pomodoros, received: { beep, wave, blanket, fortune: fortunes }, fortune: fortune < 0 ? null : fortune, coRiders, quote, mode: night ? 'night' : 'morning', card: CARDS[card], room: `${line}-${room}`,
+    minutes, pomodoros, received: { beep, wave, blanket, fortune: fortunes }, fortune: fortune < 0 ? null : fortune,
+    yielded, yieldedTo: YIELD_TO[yieldedTo] ?? null, coRiders, quote, mode: night ? 'night' : 'morning', card: CARDS[card], room: `${line}-${room}`,
   });
   return parsed.success && stationByCode(parsed.data.line, parsed.data.from) && stationByCode(parsed.data.line, parsed.data.to)
     ? parsed.data
@@ -139,7 +146,7 @@ export function renderOgImage(t: TicketStats): Buffer {
   b.rect(230, 84, 2, 6, pal.outside);
 
   const r = t.received;
-  drawText(b, `FOCUS ${t.pomodoros}  BEEP ${r.beep} WAVE ${r.wave} NAP ${r.blanket} LUCK ${r.fortune}`, 16, 94, pal.ink);
+  drawText(b, `FOCUS ${t.pomodoros}  BEEP ${r.beep} WAVE ${r.wave} NAP ${r.blanket} LUCK ${r.fortune}${t.yielded ? `  SEAT ${t.yielded}` : ''}`, 16, 94, pal.ink);
   const p = taipeiParts(t.boardedAt);
   const date = `${p.y}.${String(p.mo).padStart(2, '0')}.${String(p.d).padStart(2, '0')}`;
   drawText(b, `CARRIAGE CORNER - ${OPERATOR.en}`, 16, 106, pal.muted);
@@ -215,6 +222,7 @@ export function renderLanding(t: TicketStats, token: string, origin: string): st
       <div>📖 專注模式 ×${t.pomodoros}</div>
       <div>🪪 嗶卡 ×${t.received.beep}　🎵 波紋 ×${t.received.wave}　💤 小毯 ×${t.received.blanket}　📜 籤 ×${t.received.fortune}</div>
       ${t.fortune === null ? '' : `<p class="quote">收到的籤：「${esc(fortuneAt(t.fortune).text)}」${esc(fortuneAt(t.fortune).grade)}</p>`}
+      ${kindnessLine(t) ? `<p class="quote">${esc(kindnessLine(t)!)}</p>` : ''}
       <p class="muted">${esc(companionLine(t.coRiders))}</p>
       <p class="quote">「${esc(quoteOf(t))}」</p>
       <p class="muted">No. ${esc(ticketSerial(t))}</p>

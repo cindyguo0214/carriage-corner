@@ -1,7 +1,7 @@
 // 北城捷運車票明信片（docs/PRD.md §8.1–8.5）
 // 公開分享連結只帶這些欄位：全是代碼與數字，不含任何使用者輸入的文字，因此不需內容審核也不需資料庫。
 import { LINES } from './lines';
-import type { GlowKind, LineId, Mode, PassCardId, SpotId } from './protocol';
+import type { Gender, GlowKind, LineId, Mode, PassCardId, SpecialKind, SpotId } from './protocol';
 import { QUOTES } from './quotes';
 
 export interface TicketStats {
@@ -19,6 +19,9 @@ export interface TicketStats {
   received: Record<GlowKind, number>;
   /** 最近收到的一支籤（FORTUNES 索引）；沒收到為 null */
   fortune: number | null;
+  /** 這趟讓座的次數，與最近一次讓給誰（docs/PRD.md 第 20 章） */
+  yielded: number;
+  yieldedTo: YieldTo | null;
   /** 同車過的真人乘客數（不含 NPC 與自己） */
   coRiders: number;
   /** QUOTES[mode] 的索引 */
@@ -27,6 +30,23 @@ export interface TicketStats {
   card: PassCardId;
   /** 列車編號，例如 CX-0042 */
   room: string;
+}
+
+export type YieldTo = 'grandma' | 'grandpa' | 'mom' | 'dad';
+export const YIELD_TO: YieldTo[] = ['grandma', 'grandpa', 'mom', 'dad'];
+const YIELD_LABEL: Record<YieldTo, string> = { grandma: '阿嬤', grandpa: '阿公', mom: '帶小孩的媽媽', dad: '帶小孩的爸爸' };
+
+export function yieldTarget(kind: SpecialKind, gender: Gender): YieldTo {
+  if (kind === 'elder') return gender === 'f' ? 'grandma' : 'grandpa';
+  return gender === 'f' ? 'mom' : 'dad';
+}
+
+/** 車票上的「今日成就」；沒讓座時為 null */
+export function kindnessLine(t: Pick<TicketStats, 'line' | 'yielded' | 'yieldedTo'>) {
+  if (t.yielded <= 0) return null;
+  const line = LINES[t.line].zh;
+  if (t.yielded > 1 || !t.yieldedTo) return `今日成就：在${line}讓了 ${t.yielded} 次座，心情很暖。`;
+  return `今日成就：在${line}給${YIELD_LABEL[t.yieldedTo]}讓了座，心情很暖。`;
 }
 
 export const PASS_CARDS: Record<PassCardId, { zh: string; en: string }> = {

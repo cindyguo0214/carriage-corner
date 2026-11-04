@@ -2,7 +2,7 @@
 // 像素圖層畫在 216×270，再以 Nearest 放大 5 倍；文字直接畫在全解析度上保持清晰。
 import qrcode from 'qrcode-generator';
 import {
-  companionLine, fortuneAt, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
+  companionLine, fortuneAt, kindnessLine, LINES, OPERATOR, PASS_CARDS, quoteOf, stationByCode, taipeiParts, ticketSerial,
   type Mode, type PassCardId, type TicketStats,
 } from '@cc/shared';
 import { makeCanvas, mix, Painter } from '../game/paint';
@@ -99,6 +99,14 @@ export function drawTicket({ stats, shareUrl, note }: TicketView): HTMLCanvasEle
     const f = fortuneAt(stats.fortune);
     text(`收到的籤：「${f.text}」${f.grade}`, L, y, 30, pal.accent, { bold: true });
     y += 42;
+  }
+  // 今日成就：讓過座才印（docs/PRD.md 第 20 章）；右邊有 QR code，太長就換行
+  const kind = kindnessLine(stats);
+  if (kind) {
+    for (const l of wrap(ctx, kind, 620, `700 28px ${FONT}`)) {
+      text(l, L, y, 28, pal.accent, { bold: true });
+      y += 40;
+    }
   }
   text(companionLine(stats.coRiders), L, y, 28, pal.muted);
 
