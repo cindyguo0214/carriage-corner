@@ -259,6 +259,24 @@ export class AmbientMixer {
     osc.onended = () => g.disconnect();
   }
 
+  /** 月台打招呼：一聲很輕、圓潤的單音（正弦波，慢慢收尾） */
+  playHi() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const at = ctx.currentTime + 0.01;
+    const osc = new OscillatorNode(ctx, { type: 'sine', frequency: 784 });
+    const g = new GainNode(ctx, { gain: 0 });
+    osc.connect(g).connect(this.buses.sfx);
+    osc.frequency.setValueAtTime(784, at);
+    osc.frequency.exponentialRampToValueAtTime(880, at + 0.08);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.7, at + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, at + 0.45);
+    osc.start(at);
+    osc.stop(at + 0.5);
+    osc.onended = () => g.disconnect();
+  }
+
   /** 嗶卡默契：比進站閘門短一點、亮一點的「嗶」 */
   playCardBeep() {
     if (!this.ctx) return;

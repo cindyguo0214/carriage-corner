@@ -1,7 +1,7 @@
 // 全域狀態：Pixi 場景、音訊與 React HUD 各自訂閱需要的切片（docs/PRD.md §6.3）
 import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
-import type { AvatarId, Gender, GlowKind, LineId, Mode, PassCardId, PaxState, SpotId, YieldTo } from '@cc/shared';
+import { CARS, type AvatarId, type Gender, type GlowKind, type LineId, type Mode, type PassCardId, type PaxState, type SpotId, type YieldTo } from '@cc/shared';
 
 export interface Pomodoro {
   kind: 'focus' | 'break';
@@ -10,7 +10,8 @@ export interface Pomodoro {
 }
 
 export interface GlowMenu {
-  seat: SpotId;
+  /** 車廂裡是對方的座位；月台上是候車乘客（月台 NPC 的 id） */
+  target: SpotId | { npc: string };
   name: string;
   /** 對方此刻的狀態：決定「同頻波紋」「蓋上小毯」能不能用、會變成什麼 */
   state: PaxState;
@@ -57,7 +58,8 @@ export interface AppState {
   toast: { text: string; at: number } | null;
   rain: boolean;
   /** 列車狀態只在事件時更新，不逐幀寫入 */
-  train: { from: number; to: number; phase: 'run' | 'dwell' };
+  /** arriveAt：抵達 to 站的本機時間（毫秒），跑馬燈用 */
+  train: { from: number; to: number; phase: 'run' | 'dwell'; arriveAt: number };
   subtitle: { text: string; at: number } | null;
   pomodoro: Pomodoro | null;
   pomodorosDone: number;
@@ -71,8 +73,8 @@ export interface AppState {
   ride: { line: LineId; boardedAt: number; fromIdx: number; toIdx?: number; endedAt?: number; seat?: SpotId; roomId: string; coRiders: number } | null;
   /** 自己最近一次寫在車窗上的話（可選擇印在車票上，不進公開連結） */
   myNote: string | null;
-  /** walkman：聽音樂時的隨身聽面板展開著（收起來時只剩小膠囊） */
-  ui: { mixerOpen: boolean; composerOpen: boolean; ticketOpen: boolean; walkman: boolean; glowMenu: GlowMenu | null; noteMenu: NoteMenu | null };
+  /** walkman：聽音樂時的隨身聽面板展開著（收起來時只剩小膠囊）；routeOpen：完整站點圖展開著 */
+  ui: { mixerOpen: boolean; composerOpen: boolean; ticketOpen: boolean; walkman: boolean; routeOpen: boolean; glowMenu: GlowMenu | null; noteMenu: NoteMenu | null };
 }
 
 const params = new URLSearchParams(location.search);
@@ -93,7 +95,7 @@ export const store = createStore<AppState>(() => ({
   boarded: false,
   scene: 'platform',
   car: 1,
-  cars: 4,
+  cars: CARS,
   platform: { station: 0, phase: 'away', at: 0, toward: 1 },
   net: 'offline',
   mode: initialMode === 'morning' || initialMode === 'night' ? initialMode : 'night',
@@ -103,7 +105,7 @@ export const store = createStore<AppState>(() => ({
   dnd: false,
   toast: null,
   rain: false,
-  train: { from: 0, to: 1, phase: 'run' },
+  train: { from: 0, to: 1, phase: 'run', arriveAt: 0 },
   subtitle: null,
   pomodoro: null,
   pomodorosDone: 0,
@@ -112,7 +114,7 @@ export const store = createStore<AppState>(() => ({
   yielded: { count: 0, to: null },
   ride: null,
   myNote: null,
-  ui: { mixerOpen: false, composerOpen: false, ticketOpen: false, walkman: true, glowMenu: null, noteMenu: null },
+  ui: { mixerOpen: false, composerOpen: false, ticketOpen: false, walkman: true, routeOpen: false, glowMenu: null, noteMenu: null },
 }));
 
 export const useApp = <T,>(selector: (s: AppState) => T) => useStore(store, selector);

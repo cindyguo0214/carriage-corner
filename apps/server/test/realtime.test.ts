@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { after, afterEach, before, describe, it } from 'node:test';
 import { io as connect, type Socket } from 'socket.io-client';
-import type { BoardedSnapshot, ClientToServer, LineId, PlatformArrival, ServerToClient } from '@cc/shared';
+import { CARS, type BoardedSnapshot, type ClientToServer, type LineId, type PlatformArrival, type ServerToClient } from '@cc/shared';
 import { createRealtimeServer, type RealtimeServer } from '../src/app';
 import type { Config } from '../src/config';
 
@@ -96,7 +96,7 @@ describe('realtime server', () => {
     const ninth = riders[8].snap.room;
     assert.ok(!first8.has(ninth.id), '第 9 人改坐別節，不擠博愛座');
     assert.equal(ninth.train, riders[0].snap.room.train, '仍是同一列車');
-    assert.equal(ninth.cars, 4);
+    assert.equal(ninth.cars, CARS);
     const other = await board('CX');
     assert.notEqual(other.snap.room.train, ninth.train);
   });

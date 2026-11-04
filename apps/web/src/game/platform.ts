@@ -2,13 +2,15 @@
 // 候車的人是本機 NPC。連線時列車進站、開門、離站的時間跟伺服器的列車一致（第 19 章），
 // 走進車門時坐進的就是那班停在這站的車；離線時在本機隨機排班。
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { CARS, LINES, npcIdentity, stationIsUnderground, type LineId, type Mode, type PlatformArrival } from '@cc/shared';
+import { CARS, FORTUNES, LINES, npcIdentity, stationIsUnderground, type LineId, type Mode, type PlatformArrival } from '@cc/shared';
 import { mixer } from '../audio/AmbientMixer';
+import type { PlatformGlow } from '../gameBridge';
 import { actions, devParams, store, type PlatformPhase } from '../store';
 import { Actor, type Label } from './actor';
 import type { CharacterFrames, View } from './characters';
 import { DOORS, H, W } from './layout';
 import { hexToNum, PALETTES } from './palette';
+import { Particles } from './particles';
 import {
   BENCH_H, BENCH_SEAT_DX, BENCH_TOP, BENCH_W, BENCHES, buildPlatformArt, CAR_GAP, CAR_W, CEIL_H, FLOOR_TOP,
   GATE_TOP, PSD_BOTTOM, PSD_TOP, TRAIN_DOOR_H, TRAIN_DOOR_TOP, TRAIN_TOP, XFER_SLOTS, XFER_TOP, XFER_W, xferStairs,
@@ -32,6 +34,10 @@ const CLOSE_SEC = 1.4;
 const LEAVE_SEC = 5;
 const DOOR_OPEN_SEC = 1;
 const ME = 'me';
+/** 月台互動時頭上浮起的字停留多久（秒） */
+const POP_SEC = 1.6;
+/** 遞幸運籤只挑吉利的（大吉／中吉） */
+const LUCKY = FORTUNES.filter(f => f.grade !== '小吉');
 
 type Role = 'queue' | 'bench' | 'walker' | 'boarding' | 'leaving';
 interface Npc { actor: Actor; role: Role; spot: string | null }
@@ -110,6 +116,12 @@ export class PlatformScene implements Scene {
   /** 延遲動作：跟著場景的時間走，場景收掉就不會再執行 */
   private timers: { at: number; fn: () => void }[] = [];
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  /** 輪盤互動的效果：頭上浮起的字、柔光圈、光點 */
+  private pops: { id: string; actor: Actor; text: string; born: number }[] = [];
+  private popSeq = 0;
+  private glow = new Graphics();
+  private glows: { actor: Actor; t: number }[] = [];
+  private particles = new Particles();
 
   constructor(private start: PlatformStart, private hooks: PlatformHooks) {
     this.line = LINES[start.lineId];
@@ -168,7 +180,7 @@ export class PlatformScene implements Scene {
       xferLayer.addChild(sprite);
       this.xfers.push({ to, slot: XFER_SLOTS[i], sprite });
     });
-    this.world.addChild(this.back, this.train, this.psd, psdLeafLayer, this.ceiling, this.floor, xferLayer, this.lights, this.people);
+    this.world.addChild(this.back, this.train, this.psd, psdLeafLayer, this.ceiling, this.floor, xferLayer, this.lights, this.glow, this.people, this.particles.view);
 
     // ── 自己 ──
     const { name, gender, avatar } = store.getState();
@@ -416,8 +428,18 @@ export class PlatformScene implements Scene {
     this.me.placeAt(this.me.sprite.x, LANE_Y);
   }
 
-  tap(x: number, y: number) {
+  tap(x: number, y: number, client: { x: number; y: number }) {
     if (this.myRole === 'boarding') return;
+    // 點其他候車乘客：展開月台輪盤（§23.2）
+    const hit = this.npcs.find(
+      n => n.role !== 'boarding' && n.role !== 'leaving' && n.actor.sprite.alpha > 0.5
+        && x >= n.actor.sprite.x + 18 && x < n.actor.sprite.x + 46 && y >= n.actor.sprite.y + 4 && y < n.actor.sprite.y + 62,
+    );
+    if (hit) {
+      actions.setUi({ glowMenu: { target: { npc: hit.actor.id }, name: hit.actor.look.name, state: 'idle', x: client.x, y: client.y } });
+      return;
+    }
+    if (store.getState().ui.glowMenu) return actions.setUi({ glowMenu: null });
     // 點樓梯口或轉乘指示牌：走下連通道
     const xfer = this.xfers.find(t => x >= t.slot.x && x < t.slot.x + XFER_W && y >= XFER_TOP - 6);
     if (xfer) return this.walkToTransfer(xfer);
@@ -496,6 +518,36 @@ export class PlatformScene implements Scene {
 
   // ── 場景介面 ──
 
+  /** 月台輪盤的四個互動：只在本機演出（月台上的人都是候車中的 NPC） */
+  greet(npcId: string, kind: PlatformGlow) {
+    const npc = this.npcs.find(n => n.actor.id === npcId);
+    if (!npc) return;
+    const { actor } = npc;
+    if (kind === 'hi') {
+      mixer.playHi();
+      this.popOn(actor, '👋');
+    } else if (kind === 'beep') {
+      mixer.playCardBeep();
+      this.popOn(actor, '嗶！');
+    } else if (kind === 'wave') {
+      this.popOn(actor, '♪');
+    } else {
+      const f = LUCKY[Math.floor(Math.random() * LUCKY.length)];
+      this.popOn(actor, `📜 ${f.grade}`);
+      actions.toast(`你遞給${actor.look.name}一張籤：「${f.text}」（${f.grade}）`);
+    }
+    this.glows.push({ actor, t: 0 });
+    const tint = hexToNum(PALETTES[this.mode].glow);
+    for (let i = 0; i < (kind === 'wave' ? 10 : 6); i++) {
+      this.particles.emit('spark', actor.sprite.x + 24 + Math.random() * 16, actor.sprite.y + 14, tint);
+    }
+  }
+
+  private popOn(actor: Actor, text: string) {
+    this.pops = this.pops.filter(p => p.actor !== actor);
+    this.pops.push({ id: `pop${++this.popSeq}`, actor, text, born: this.time });
+  }
+
   focusX() {
     return this.me.sprite.x + 32;
   }
@@ -507,6 +559,12 @@ export class PlatformScene implements Scene {
     };
     this.npcs.forEach(n => push(n.actor, false));
     push(this.me, true);
+    this.pops = this.pops.filter(p => this.time - p.born < POP_SEC && !p.actor.gone);
+    for (const p of this.pops) {
+      const k = (this.time - p.born) / POP_SEC;
+      const { x, y } = p.actor.headTop;
+      out.push({ id: p.id, name: p.text, x, y: y - 10 - Math.round(k * 10), alpha: k < 0.7 ? 1 : (1 - k) / 0.3, self: false, pop: true });
+    }
     for (const x of this.xfers) {
       const to = LINES[x.to];
       const left = x.slot.align === 'left';
@@ -592,6 +650,7 @@ export class PlatformScene implements Scene {
       if (this.phase === before) break;
     }
     this.phaseT = this.phaseLen - Math.max(0, this.phaseEnd - Date.now()) / 1000;
+    this.updateGlows(dt);
     const due = this.timers.filter(t => t.at <= this.time);
     if (due.length) {
       this.timers = this.timers.filter(t => t.at > this.time);
@@ -601,7 +660,8 @@ export class PlatformScene implements Scene {
     // 列車位置：進站減速、出站加速
     const t = Math.min(1, this.phaseT / this.phaseLen);
     if (this.phase === 'arriving') this.trainX = 1500 * (1 - t) ** 2;
-    else if (this.phase === 'leaving') this.trainX = -2900 * t * t;
+    // 出站：整列（CARS 節）都要開出畫面左邊
+    else if (this.phase === 'leaving') this.trainX = -((CARS - DOCK_CAR) * (CAR_W + CAR_GAP) + 100) * t * t;
     else if (this.phase === 'away') this.trainX = 3000;
     else this.trainX = 0;
     this.cars.forEach((c, k) => {
@@ -649,6 +709,24 @@ export class PlatformScene implements Scene {
     if (gone.length) {
       gone.forEach(n => n.actor.sprite.destroy());
       this.npcs = this.npcs.filter(n => !gone.includes(n));
+    }
+  }
+
+  /** 互動的柔光圈：從對方胸口慢慢擴散、淡出 */
+  private updateGlows(dt: number) {
+    this.particles.update(dt);
+    const g = this.glow;
+    g.clear();
+    if (!this.glows.length) return;
+    const color = hexToNum(PALETTES[this.mode].glow);
+    this.glows = this.glows.filter(gl => (gl.t += dt) < 1.2 && !gl.actor.gone);
+    for (const gl of this.glows) {
+      const k = gl.t / 1.2;
+      const cx = gl.actor.sprite.x + 32;
+      const cy = gl.actor.sprite.y + 30;
+      for (const [r, a] of [[14, 0.12], [9, 0.18], [5, 0.25]] as const) {
+        g.circle(cx, cy, r + k * 8).fill({ color, alpha: a * (1 - k) });
+      }
     }
   }
 

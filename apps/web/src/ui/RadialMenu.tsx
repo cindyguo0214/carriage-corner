@@ -1,13 +1,27 @@
-// 點其他乘客時展開的環形輪盤（docs/PRD.md §18.2）：四個扇形、只有像素圖示、中心是關閉鈕
-// 畫面上不放說明文字；名稱只留給螢幕閱讀器（aria-label）。
+// 點其他乘客時展開的環形輪盤（docs/PRD.md §18.2、§23.2）：四個扇形、只有像素圖示、中心是關閉鈕
+// 畫面上不放說明文字；名稱只留給螢幕閱讀器（aria-label）。車廂與月台各有一組四個互動。
 import { useEffect, useRef, useState } from 'react';
 import type { GlowKind, PaxState } from '@cc/shared';
 import { mixer } from '../audio/AmbientMixer';
-import { bridge } from '../gameBridge';
+import { bridge, type PlatformGlow } from '../gameBridge';
 import { actions, useApp } from '../store';
 
 /** 12×12 單色像素圖示：# 是一格 */
-const ICONS: Record<GlowKind | 'close', string[]> = {
+const ICONS: Record<GlowKind | PlatformGlow | 'close', string[]> = {
+  hi: [
+    '....#.#.....',
+    '...#.#.#.#..',
+    '...#.#.#.#..',
+    '#..#.#.#.#..',
+    '.#.#######..',
+    '...#######.#',
+    '..#########.',
+    '..########..',
+    '...######...',
+    '....####....',
+    '#...........',
+    '.#..........',
+  ],
   beep: [
     '............',
     '............',
@@ -80,12 +94,22 @@ const ICONS: Record<GlowKind | 'close', string[]> = {
   ],
 };
 
-/** 依對方此刻的狀態：蓋小毯只能給正在補眠的人（docs/PRD.md 第 17 章） */
-const SLICES: { kind: GlowKind; label: (st: PaxState) => string; enabled?: (st: PaxState) => boolean }[] = [
+interface Slice { kind: GlowKind | PlatformGlow; label: (st: PaxState) => string; enabled?: (st: PaxState) => boolean }
+
+/** 車廂：依對方此刻的狀態，蓋小毯只能給正在補眠的人（docs/PRD.md 第 17 章） */
+const CAR_SLICES: Slice[] = [
   { kind: 'beep', label: () => '嗶卡默契：刷一下隨行卡打招呼' },
   { kind: 'wave', label: st => (st === 'music' ? '同頻波紋：一起跟著音樂跳動' : '同頻波紋：送上一點溫暖微光') },
   { kind: 'blanket', label: st => (st === 'sleep' ? '蓋上小毯' : '蓋上小毯（對方補眠時才能蓋）'), enabled: st => st === 'sleep' },
   { kind: 'fortune', label: () => '遞幸運籤：送一張今日小吉籤' },
+];
+
+/** 月台（§23.2）：上 打招呼、右 嗶卡、下 同頻波紋、左 幸運籤；月台是候車空間，沒有蓋小毯 */
+const PLATFORM_SLICES: Slice[] = [
+  { kind: 'hi', label: () => '打招呼：揮揮手說聲 Hi' },
+  { kind: 'beep', label: () => '嗶卡默契：刷一下隨行卡打招呼' },
+  { kind: 'wave', label: () => '同頻波紋：送上一點溫暖微光' },
+  { kind: 'fortune', label: () => '遞幸運籤：送一張今日吉籤' },
 ];
 
 const R = 88;
@@ -140,9 +164,11 @@ export function RadialMenu() {
     setHot(null);
     setLeaving(false);
     root.current?.focus({ preventScroll: true });
-  }, [menu?.seat, menu?.x, menu?.y]);
+  }, [menu?.target, menu?.x, menu?.y]);
 
   if (!menu) return null;
+  const { target } = menu;
+  const SLICES = typeof target === 'string' ? CAR_SLICES : PLATFORM_SLICES;
   const close = () => actions.setUi({ glowMenu: null });
   const enabled = (i: number) => SLICES[i].enabled?.(menu.state) ?? true;
 
@@ -155,9 +181,10 @@ export function RadialMenu() {
   const pick = (i: number) => {
     if (!enabled(i) || leaving) return;
     setLeaving(true);
-    const { seat } = menu;
     // 輪盤向外擴散淡出，同時把互動送出去
-    void bridge.game?.glow(seat, SLICES[i].kind);
+    const kind = SLICES[i].kind;
+    if (typeof target === 'string') void bridge.game?.glow(target, kind as GlowKind);
+    else bridge.game?.platformGlow(target.npc, kind as PlatformGlow);
     setTimeout(close, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220);
   };
 

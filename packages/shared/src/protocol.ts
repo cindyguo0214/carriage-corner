@@ -151,7 +151,7 @@ export const NAME_MAX_GRAPHEMES = 8;
 /** 名字被過濾或留白時的替代名 */
 export const FALLBACK_NAME = '旅人';
 /** 一列車的車廂數 */
-export const CARS = 4;
+export const CARS = 6;
 export const GLOW_KINDS: GlowKind[] = ['beep', 'wave', 'blanket', 'fortune'];
 export const PAX_STATES: PaxState[] = ['idle', 'music', 'read', 'sleep'];
 export const AVATARS: PlayerAvatar[] = ['office', 'student', 'hoodie', 'headphone'];

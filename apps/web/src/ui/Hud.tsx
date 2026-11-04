@@ -8,6 +8,7 @@ import { bridge } from '../gameBridge';
 import { actions, devParams, store, useApp, type PlatformPhase } from '../store';
 import { RadialMenu } from './RadialMenu';
 import { TicketModal } from './TicketModal';
+import { RouteMap, Ticker } from './TransitGuide';
 import { useMoodMusic, Walkman } from './Walkman';
 
 const STATES: { state: PaxState; icon: string; label: string }[] = [
@@ -37,7 +38,7 @@ export function Hud() {
   useMoodMusic();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') actions.setUi({ mixerOpen: false, composerOpen: false, ticketOpen: false, glowMenu: null, noteMenu: null });
+      if (e.key === 'Escape') actions.setUi({ mixerOpen: false, composerOpen: false, ticketOpen: false, routeOpen: false, glowMenu: null, noteMenu: null });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -47,6 +48,8 @@ export function Hud() {
     <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 text-sm sm:p-4">
       <div className="flex flex-col gap-2">
         <TopBar />
+        <RouteMap />
+        <Ticker />
         <Toast />
         <Walkman />
       </div>
@@ -106,16 +109,29 @@ function TrainInfo() {
   const dir = train.to > train.from ? 1 : -1;
   const terminal = line.stations[dir === 1 ? line.stations.length - 1 : 0];
   const next = line.stations[train.to];
+  const routeOpen = useApp(s => s.ui.routeOpen);
   return (
     <div className={`pointer-events-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap rounded px-3 py-2 ${theme.panel}`}>
-      <span className="flex items-center gap-1.5 font-medium">
-        <span className="inline-block size-2.5 rounded-[2px]" style={{ background: line.color }} />
-        {line.id} {line.zh}
-      </span>
-      <span className="opacity-70">往 {terminal.zh}</span>
-      <span aria-live="polite">
-        {train.phase === 'dwell' ? <>到站 ▸ <b>{next.zh}</b></> : <>下一站 ▸ <b>{next.zh}</b></>}
-      </span>
+      {/* 點路線與下一站：展開完整站點圖（§23.3） */}
+      <button
+        aria-expanded={routeOpen}
+        title="看完整站點圖與轉乘資訊"
+        className="-mx-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded px-1 text-left hover:bg-current/5"
+        onClick={() => actions.setUi({ routeOpen: !routeOpen })}
+      >
+        <span className="flex items-center gap-1.5 font-medium">
+          <span className="inline-block size-2.5 rounded-[2px]" style={{ background: line.color }} />
+          {line.id} {line.zh}
+        </span>
+        <span className="opacity-70">往 {terminal.zh}</span>
+        <span aria-live="polite">
+          {train.phase === 'dwell' ? <>到站 ▸ <b>{next.zh}</b></> : <>下一站 ▸ <b>{next.zh}</b></>}
+          {next.transfer?.map(id => (
+            <span key={id} className="ml-1 rounded-[3px] px-1 text-[10px] font-bold text-white" style={{ background: LINES[id].color }}>轉 {id}</span>
+          ))}
+          <span className="ml-1 opacity-50" aria-hidden>▾</span>
+        </span>
+      </button>
       <span className="flex items-center gap-1" aria-label={`第 ${car} 節車廂，共 ${cars} 節`}>
         <button
           aria-label="走到前一節車廂"
@@ -125,7 +141,7 @@ function TrainInfo() {
         >
           ◀
         </button>
-        <span className="tabular-nums">第 {car}/{cars} 節</span>
+        <span className="tabular-nums">第 {car} / {cars} 車廂</span>
         <button
           aria-label="走到後一節車廂"
           disabled={car >= cars}
