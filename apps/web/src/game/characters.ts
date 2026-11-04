@@ -3,6 +3,8 @@ import { CanvasSource, type Texture } from 'pixi.js';
 import { AVATARS, SPECIAL_KINDS, type AvatarId, type Gender, type Mode, type PaxState } from '@cc/shared';
 import { atlasFrames, makeCanvas, mix, Painter } from './paint';
 import { outfitFor, PALETTES, shade, type Outfit, type Palette } from './palette';
+import officeFemaleUrl from '../assets/characters/commuter-office-female.png';
+import officeMaleUrl from '../assets/characters/commuter-office-male.png';
 
 export const CELL = 64;
 export type View = 'front' | 'back';
@@ -64,9 +66,34 @@ export function buildCharacterAtlas(mode: Mode): CharacterFrames {
   return out;
 }
 
-/** 閘門的角色預覽：在 64×64 的畫布上畫一格正面站姿（frame 0／1 輪流就是呼吸） */
+/** 角色設定頁的全身預覽圖（64×64，頭頂第 4 列、腳底第 61 列；目前有上班族，其他穿搭還沒畫） */
+const PREVIEW_ART: Partial<Record<AvatarId, Record<Gender, HTMLImageElement>>> = {
+  office: { f: loadImage(officeFemaleUrl), m: loadImage(officeMaleUrl) },
+};
+/** 預覽圖都載好（載不到也算完成，會改用程式畫的角色） */
+export const previewArtReady = Promise.all(
+  Object.values(PREVIEW_ART).flatMap(g => Object.values(g!)).map(img => img.decode().catch(() => {})),
+).then(() => {});
+
+function loadImage(src: string) {
+  const img = new Image();
+  img.src = src;
+  return img;
+}
+
+/** 腰線：呼吸時這一列以上往下沉 1 px，腳底不動 */
+const PREVIEW_WAIST = 44;
+
+/** 閘門的角色預覽：在 64×64 的畫布上畫一格站姿（frame 0／1 輪流就是呼吸） */
 export function paintPreview(ctx: CanvasRenderingContext2D, avatar: AvatarId, gender: Gender, mode: Mode, frame: number) {
   ctx.clearRect(0, 0, CELL, CELL);
+  const art = PREVIEW_ART[avatar]?.[gender];
+  if (art?.complete && art.naturalWidth) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(art, 0, PREVIEW_WAIST, CELL, CELL - PREVIEW_WAIST, 0, PREVIEW_WAIST, CELL, CELL - PREVIEW_WAIST);
+    ctx.drawImage(art, 0, 0, CELL, PREVIEW_WAIST, 0, frame, CELL, PREVIEW_WAIST);
+    return;
+  }
   drawCharacter(new Painter(ctx), 0, 0, { avatar, gender, view: 'front', o: outfitFor(avatar, gender, mode) }, 'stand', frame, PALETTES[mode]);
 }
 

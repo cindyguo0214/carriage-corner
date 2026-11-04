@@ -52,6 +52,7 @@ try {
 
 // ── 角色預覽：名字、外觀與穿搭即時反映（用遊戲裡同一套角色畫法） ──
 const charactersModule = import('./game/characters');
+void charactersModule.then(m => m.previewArtReady).then(() => renderPreview());
 let previewFrame = 0;
 function renderPreview() {
   const name = tidyName(nameInput.value);
