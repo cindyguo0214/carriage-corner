@@ -8,6 +8,7 @@ import { bridge } from '../gameBridge';
 import { actions, devParams, store, useApp, type PlatformPhase } from '../store';
 import { RadialMenu } from './RadialMenu';
 import { TicketModal } from './TicketModal';
+import { useMoodMusic, Walkman } from './Walkman';
 
 const STATES: { state: PaxState; icon: string; label: string }[] = [
   { state: 'idle', icon: '👀', label: '看窗外' },
@@ -33,6 +34,7 @@ function useTheme() {
 }
 
 export function Hud() {
+  useMoodMusic();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') actions.setUi({ mixerOpen: false, composerOpen: false, ticketOpen: false, glowMenu: null, noteMenu: null });
@@ -46,6 +48,7 @@ export function Hud() {
       <div className="flex flex-col gap-2">
         <TopBar />
         <Toast />
+        <Walkman />
       </div>
       <div className="flex flex-col items-center gap-3">
         <Subtitle />
@@ -298,13 +301,7 @@ function CarriageBar() {
               icon={s.icon}
               label={s.label}
               on={selfState === s.state}
-              onClick={() => {
-                actions.setSelfState(s.state);
-                if (s.state === 'music') {
-                  void mixer.setChannel('lofi', true);
-                  actions.setUi({ mixerOpen: true });
-                }
-              }}
+              onClick={() => actions.setSelfState(s.state)}
             />
           ))
         )}

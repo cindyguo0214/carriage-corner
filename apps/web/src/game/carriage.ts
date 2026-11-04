@@ -66,7 +66,7 @@ export class CarriageScene implements Scene {
   private blanketFront = new Graphics();
   private waves = new Map<string, number>();
   private blankets = new Map<string, { since: number; until: number }>();
-  private pops: { id: string; actor: Actor; text: string; born: number }[] = [];
+  private pops: { id: string; actor: Actor; text: string; born: number; ms: number }[] = [];
   /** 延遲動作（小插曲的分鏡）：跟著場景的時間走，場景收掉就不會再執行 */
   private timers: { at: number; fn: () => void }[] = [];
   /** 小插曲：車門被背包卡住時，門只關到這個程度 */
@@ -492,12 +492,21 @@ export class CarriageScene implements Scene {
   }
 
   /** 頭上浮起一小段字（嗶！、♪、📜），1.6 秒後消失 */
+  /** 自己頭上浮出一個小圖示（例如切換情境音樂時的 🌱） */
+  popSelf(text: string, ms?: number) {
+    const self = this.passengers.get(this.selfPid);
+    if (!self) return;
+    // 連點切換時只留最新的一個
+    this.pops = this.pops.filter(pop => pop.actor !== self.actor || !pop.id.startsWith('self'));
+    this.pops.push({ id: `self${++this.popSeq}`, actor: self.actor, text, born: performance.now(), ms: ms ?? 1600 });
+  }
+
   private pop(target: Pax, text: string) {
     this.popOn(target.actor, text);
   }
 
-  private popOn(actor: Actor, text: string) {
-    this.pops.push({ id: `pop${++this.popSeq}`, actor, text, born: performance.now() });
+  private popOn(actor: Actor, text: string, ms = 1600) {
+    this.pops.push({ id: `pop${++this.popSeq}`, actor, text, born: performance.now(), ms });
   }
 
   /** 全車看得到的互動效果；involved＝自己是送出者或收到的人（才聽得到嗶聲） */
@@ -700,12 +709,12 @@ export class CarriageScene implements Scene {
   labels(out: Label[]) {
     this.passengers.labels(out);
     const now = performance.now();
-    this.pops = this.pops.filter(pop => now - pop.born < 1600);
+    this.pops = this.pops.filter(pop => now - pop.born < pop.ms);
     for (const pop of this.pops) {
       if (pop.actor.gone) continue;
-      const k = (now - pop.born) / 1600;
+      const k = (now - pop.born) / pop.ms;
       const { x, y } = pop.actor.headTop;
-      out.push({ id: pop.id, name: pop.text, x, y: y - 10 - Math.round(k * 10), alpha: k < 0.7 ? 1 : (1 - k) / 0.3, self: false, pop: true });
+      out.push({ id: pop.id, name: pop.text, x, y: y - 10 - Math.round(Math.min(1, (now - pop.born) / 1600) * 10), alpha: k < 0.7 ? 1 : (1 - k) / 0.3, self: false, pop: true });
     }
     // 讓座提示：只有自己看得到，點了才讓
     const offer = this.yieldCandidate();

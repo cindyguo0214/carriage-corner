@@ -184,6 +184,7 @@ export async function boot(host: HTMLElement, net: NetLink | null) {
     currentStation: () => carriage()?.currentStation() ?? store.getState().platform.station,
     alight: () => void carriageHooks.alight(),
     moveCar: dir => void carriageHooks.moveCar(dir),
+    popSelf: (text, ms) => carriage()?.popSelf(text, ms),
     async signTicket(stats) {
       if (!net) return null;
       try {
