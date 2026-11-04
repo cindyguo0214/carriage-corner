@@ -2,22 +2,23 @@
 // 連線時由伺服器驅動乘客、列車與留言；離線時本機模擬。到站開門可點車門下車，點兩端貫通道換車廂，點空位換座位。
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import {
-  CARS, FORTUNES, fortuneAt, SEATS, STANDS, type BoardedSnapshot, type GlowKind, type Mode, type ServerToClient, type SpotId, type WindowNote,
+  CARS, FORTUNES, fortuneAt, isBigStation, isSpecial, isStand, NEAR_PRIORITY_COLUMNS, SEATS, spotColumn, STANDS, yieldTarget,
+  type BoardedSnapshot, type GlowKind, type Mode, type Passenger, type ServerToClient, type SpotId, type WindowNote,
 } from '@cc/shared';
 import { mixer } from '../audio/AmbientMixer';
 import { actions, devParams, store } from '../store';
-import type { Label } from './actor';
+import type { Actor, Label } from './actor';
 import type { CharacterFrames } from './characters';
 import { WindowGlass } from './glass';
 import { buildInterior, doorHole, GANGWAY_W } from './interior';
 import {
-  A_CELL_Y, AISLE, B_CELL_Y, B_PANEL_Y, DOORS, FLOOR_Y, H, POLES, SEAT_W, SEAT_X0, STRAP_XS, STRAP_Y, W,
+  A_CELL_Y, AISLE, B_CELL_Y, B_PANEL_Y, DOORS, FLOOR_Y, H, POLES, SEAT_W, SEAT_X0, STAND_CELL_Y, STRAP_XS, STRAP_Y, W,
   seatX, windowForSeat, windowRect,
 } from './layout';
 import { Lighting } from './lighting';
 import { hexToNum, PALETTES } from './palette';
 import { Particles } from './particles';
-import { Passengers, type Pax } from './passengers';
+import { Passengers, type Arrival, type Pax } from './passengers';
 import type { Scene } from './scene';
 import { Scenery } from './scenery';
 import { buildScenery } from './sceneryArt';
@@ -65,7 +66,12 @@ export class CarriageScene implements Scene {
   private blanketFront = new Graphics();
   private waves = new Map<string, number>();
   private blankets = new Map<string, { since: number; until: number }>();
-  private pops: { id: string; pid: string; text: string; born: number }[] = [];
+  private pops: { id: string; actor: Actor; text: string; born: number }[] = [];
+  /** 延遲動作（小插曲的分鏡）：跟著場景的時間走，場景收掉就不會再執行 */
+  private timers: { at: number; fn: () => void }[] = [];
+  /** 小插曲：車門被背包卡住時，門只關到這個程度 */
+  private doorHold: number | null = null;
+  private yielding = false;
   private popSeq = 0;
   private straps: Sprite[];
   private strapArt: Texture[] = [];
@@ -149,7 +155,7 @@ export class CarriageScene implements Scene {
         const s = this.train.line.stations[this.train.to];
         store.setState({ train: { from: this.train.from, to: this.train.to, phase: 'dwell' } });
         actions.say(`${s.zh}到了。要下車就點車門；想再坐一會兒也沒關係。｜${s.en}. Tap a door to get off.`);
-        if (!this.net) this.passengers.shuffleLocalAtStation();
+        if (!this.net) this.applyArrival(this.passengers.planLocalArrival(isBigStation(this.train.line, this.train.to)), String(Math.random()));
       },
       doorChime: () => {
         mixer.playDoorChime();
@@ -307,13 +313,172 @@ export class CarriageScene implements Scene {
         this.windowNotes.delete(w);
       }
     });
+    on('pax:thanks', ({ pid }) => this.later(0.5, () => this.thanks(pid)));
     on('train:arrive', e => {
       e.leaving.forEach(pid => this.passengers.remove(pid));
-      e.npc.leave.forEach(pid => this.passengers.remove(pid));
-      e.npc.board.forEach(p => this.passengers.add(p));
+      // 同一節車廂的人用同一顆種子挑小插曲，看到的是同一段
+      const seed = [...e.npc.leave, ...e.npc.board.map(p => p.pid)].join() || e.station;
+      this.applyArrival({ leave: e.npc.leave, board: e.npc.board, moves: [] }, seed);
     });
     on('train:depart', ({ train: t }) => this.train.setLeg(legFromSnapshot(this.train.line, t, net.offset), Date.now(), true));
     this.unsubscribe.push(net.onResync(snap => this.applySnapshot(snap, true)));
+  }
+
+  // ── 到站：NPC 上下車與開門小插曲（docs/PRD.md 第 20 章）──
+
+  private later(sec: number, fn: () => void) {
+    this.timers.push({ at: this.time + Math.max(0, sec), fn });
+  }
+
+  /** 到站的上下車；偶爾演一段 10 秒內的無聲小插曲 */
+  private applyArrival(a: Arrival, seed: string) {
+    a.moves.forEach(m => this.passengers.move(m.pid, m.seat));
+    const left = this.train.leg.dwellMs - (Date.now() - this.train.leg.arriveAt);
+    const roll = hash(seed) % 100;
+    // 演小插曲的是一般乘客；長者與家長不跑也不卡門
+    const cast = a.board.filter(p => !isSpecial(p.avatar));
+    const leaver = a.leave.find(pid => {
+      const p = this.passengers.get(pid);
+      return p && !isSpecial(p.actor.look.avatar);
+    });
+    const episode = cast.length && leaver && roll < 15 && left > 9500
+      ? 'door'
+      : cast.length && roll >= 15 && roll < 27 && left > 7000 ? 'bag' : null;
+    a.leave.forEach(pid => {
+      if (episode !== 'door' || pid !== leaver) this.passengers.remove(pid);
+    });
+    a.board.forEach(p => this.passengers.add(p));
+    if (episode === 'door') this.doorStandoff(leaver!, cast[0]);
+    if (episode === 'bag') this.bagCaught(cast[cast.length - 1], left);
+  }
+
+  /** 靠近這個位子的車門 */
+  private doorNear(seat: SpotId) {
+    return spotColumn(seat) <= 3 ? 0 : 1;
+  }
+
+  /**
+   * 小插曲①：下車的人走到門口，上車的人剛好也要進來，兩人在門口對看 2 秒，
+   * 互相點頭，上車的人側身讓出去的人先走（先下後上）。
+   */
+  private doorStandoff(leaverPid: string, boarder: Passenger) {
+    const from = this.passengers.get(leaverPid);
+    if (!from) return;
+    const door = DOORS[this.doorNear(from.seat)];
+    const leaver = this.passengers.detach(leaverPid);
+    const comer = this.passengers.hold(boarder.pid);
+    if (!leaver || !comer) return;
+    const x = door.x + door.w / 2 - 32;
+    comer.placeAt(x, DOOR_CELL_Y);
+    comer.setAnim('stand', 'front');
+    leaver.walkTo([{ x: leaver.sprite.x, y: STAND_CELL_Y }, { x, y: STAND_CELL_Y }], 'back', () => {
+      // 兩人同時往前一步，在門口對上
+      leaver.walkTo([{ x, y: STAND_CELL_Y - 8 }], 'back');
+      comer.walkTo([{ x, y: DOOR_CELL_Y + 8 }], 'front');
+      this.later(0.5, () => {
+        this.popOn(leaver, '…');
+        this.popOn(comer, '…');
+      });
+      this.later(2.4, () => {
+        this.nod(leaver);
+        this.nod(comer);
+        this.popOn(comer, '🙇');
+      });
+      this.later(3.4, () => comer.walkTo([{ x: x + 20, y: DOOR_CELL_Y + 8 }], 'front'));
+      this.later(3.8, () => leaver.walkTo([{ x, y: DOOR_CELL_Y }], 'back', () => leaver.fadeOut()));
+      this.later(5.2, () => this.walkToSeat(boarder.pid, comer, x + 20));
+    });
+  }
+
+  /**
+   * 小插曲②：最後一位衝進來的乘客背包卡到車門，關門警示音多響兩聲，門重新打開，人進來後才正常關門。
+   * 只是畫面上的演出：列車照原本的時間發車。
+   */
+  private bagCaught(boarder: Passenger, leftMs: number) {
+    const actor = this.passengers.hold(boarder.pid);
+    if (!actor) return;
+    // 先藏起來，快關門時才衝進來
+    actor.sprite.alpha = 0;
+    actor.fadeOut();
+    const door = DOORS[this.doorNear(boarder.seat)];
+    const x = door.x + door.w / 2 - 32;
+    const start = (leftMs - 1600 - 4200) / 1000;
+    this.later(start, () => {
+      actor.placeAt(x - 34, DOOR_CELL_Y);
+      actor.fadeIn();
+      actor.walkTo([{ x, y: DOOR_CELL_Y }], 'front');
+    });
+    this.later(start + 0.9, () => {
+      this.doorHold = 0.45;
+      mixer.playDoorChime(4);
+      this.popOn(actor, '🎒');
+    });
+    this.later(start + 1.7, () => {
+      mixer.playDoorChime(2);
+      this.popOn(actor, '！');
+    });
+    this.later(start + 2.4, () => {
+      this.doorHold = null;
+      this.walkToSeat(boarder.pid, actor, x);
+    });
+  }
+
+  /** 從門口走進來，沿走道走到自己的位子坐好 */
+  private walkToSeat(pid: string, actor: Actor, fromX: number) {
+    const p = this.passengers.get(pid);
+    if (!p) return;
+    actor.walkTo([{ x: fromX, y: STAND_CELL_Y }, { x: seatX(p.seat), y: STAND_CELL_Y }], 'front', () => this.passengers.settle(pid));
+  }
+
+  /** 點頭：往下點兩次 */
+  private nod(actor: Actor) {
+    const y = actor.sprite.y;
+    [[0, 2], [0.2, 0], [0.4, 2], [0.6, 0]].forEach(([t, dy]) => this.later(t, () => actor.placeAt(actor.sprite.x, y + dy)));
+  }
+
+  // ── 讓座（docs/PRD.md 第 20 章）──
+
+  /** 自己坐在博愛座或隔壁欄，而且有長者或家長站著時：離自己最近的那一位 */
+  private yieldCandidate(): Pax | null {
+    if (isStand(this.selfSeat) || !NEAR_PRIORITY_COLUMNS.has(spotColumn(this.selfSeat)) || this.yielding) return null;
+    const col = spotColumn(this.selfSeat);
+    return this.passengers.standingSpecials()
+      .sort((a, b) => Math.abs(spotColumn(a.seat) - col) - Math.abs(spotColumn(b.seat) - col))[0] ?? null;
+  }
+
+  /** 點了「🪑 讓座」：自己站到對方的站位拉吊環，對方坐下道謝 */
+  async yieldSeat() {
+    const target = this.yieldCandidate();
+    if (!target) return;
+    this.yielding = true;
+    try {
+      const mine = this.selfSeat;
+      let stand = target.seat;
+      if (this.net) {
+        const res = await this.net.socket.timeout(4000).emitWithAck('seat:yield', { to: target.pid }).catch(() => null);
+        if (!res?.ok) return actions.toast('對方好像已經找到位子了。');
+        stand = res.data.seat;
+      }
+      const { avatar, gender, name } = target.actor.look;
+      this.passengers.move(target.pid, mine);
+      this.moveSelf(stand);
+      this.later(0.5, () => this.thanks(target.pid));
+      if (isSpecial(avatar)) {
+        const to = yieldTarget(avatar, gender);
+        store.setState(s => ({ yielded: { count: s.yielded.count + 1, to } }));
+        actions.toast(`你站起來拉著吊環，把位子讓給了${name}。`);
+      }
+    } finally {
+      this.yielding = false;
+    }
+  }
+
+  /** 被讓座的人坐下後道謝：頭上浮起「✨ 謝謝」和一圈溫暖光暈 */
+  private thanks(pid: string) {
+    const p = this.passengers.get(pid);
+    if (!p) return;
+    this.showGlow(p);
+    this.popOn(p.actor, '✨ 謝謝');
   }
 
   // ── 對其他乘客的互動（docs/PRD.md 第 17 章）──
@@ -328,7 +493,11 @@ export class CarriageScene implements Scene {
 
   /** 頭上浮起一小段字（嗶！、♪、📜），1.6 秒後消失 */
   private pop(target: Pax, text: string) {
-    this.pops.push({ id: `pop${++this.popSeq}`, pid: target.pid, text, born: performance.now() });
+    this.popOn(target.actor, text);
+  }
+
+  private popOn(actor: Actor, text: string) {
+    this.pops.push({ id: `pop${++this.popSeq}`, actor, text, born: performance.now() });
   }
 
   /** 全車看得到的互動效果；involved＝自己是送出者或收到的人（才聽得到嗶聲） */
@@ -533,11 +702,17 @@ export class CarriageScene implements Scene {
     const now = performance.now();
     this.pops = this.pops.filter(pop => now - pop.born < 1600);
     for (const pop of this.pops) {
-      const p = this.passengers.get(pop.pid);
-      if (!p) continue;
+      if (pop.actor.gone) continue;
       const k = (now - pop.born) / 1600;
-      const { x, y } = p.actor.headTop;
+      const { x, y } = pop.actor.headTop;
       out.push({ id: pop.id, name: pop.text, x, y: y - 10 - Math.round(k * 10), alpha: k < 0.7 ? 1 : (1 - k) / 0.3, self: false, pop: true });
+    }
+    // 讓座提示：只有自己看得到，點了才讓
+    const offer = this.yieldCandidate();
+    const self = this.passengers.get(this.selfPid);
+    if (offer && self) {
+      const { x, y } = self.actor.headTop;
+      out.push({ id: 'yield-hint', name: '🪑 讓座', x, y: y - 14, alpha: 1, self: false, hint: () => void this.yieldSeat() });
     }
     // 通道門指示牌：沒有下一節的那一側不顯示
     const y = 104;
@@ -629,11 +804,19 @@ export class CarriageScene implements Scene {
     this.particles.update(dt);
     this.lighting.update(dt, train, this.scenery, rm);
 
-    // 車門：到站停妥後打開，關門警示音響起後關上
+    const due = this.timers.filter(t => t.at <= this.time);
+    if (due.length) {
+      this.timers = this.timers.filter(t => t.at > this.time);
+      due.forEach(t => t.fn());
+    }
+
+    // 車門：到站停妥後打開，關門警示音響起後關上；小插曲裡被背包卡住時只關到一半
     const dwellT = now - train.leg.arriveAt;
     const wantOpen = train.phase === 'dwell' && dwellT > 700 && dwellT < train.leg.dwellMs - 1600;
-    this.doorOpen = Math.max(0, Math.min(1, this.doorOpen + (wantOpen ? 1 : -1) * dt * 1.2));
-    const slide = Math.round((rm ? (wantOpen ? 1 : 0) : ease(this.doorOpen)) * DOOR_SLIDE);
+    const target = wantOpen ? (this.doorHold ?? 1) : 0;
+    const step = dt * 1.2;
+    this.doorOpen = Math.abs(target - this.doorOpen) <= step ? target : this.doorOpen + Math.sign(target - this.doorOpen) * step;
+    const slide = Math.round((rm ? target : ease(this.doorOpen)) * DOOR_SLIDE);
     DOORS.forEach((d, i) => {
       const hole = doorHole(d);
       this.leaves[i * 2].x = hole.x - slide;
@@ -690,6 +873,23 @@ export class CarriageScene implements Scene {
     });
   }
 
+  /** 開發用：叫一位長者或家長上車、演一段小插曲 */
+  debugSpecial() {
+    const board: Passenger[] = [];
+    this.passengers.planSpecial(board);
+    board.forEach(p => this.passengers.add(p));
+  }
+
+  debugEpisode(kind: 'door' | 'bag') {
+    const npc = this.passengers.all.find(p => p.npc && p.pid !== this.selfPid);
+    const seat = this.passengers.freeSeat();
+    if (!npc || !seat) return;
+    const comer: Passenger = { pid: `local_ep${Date.now()}`, seat, name: '阿哲', gender: 'm', avatar: 'student', state: 'idle', since: Date.now(), npc: true };
+    this.passengers.add(comer);
+    if (kind === 'door') this.doorStandoff(npc.pid, comer);
+    else this.bagCaught(comer, 1600 + 4200 + 300);
+  }
+
   /** 開發用 */
   debug() {
     return {
@@ -702,6 +902,15 @@ export class CarriageScene implements Scene {
 }
 
 const ease = (t: number) => t * t * (3 - 2 * t);
+/** 站在車門口（腳踩在門檻上）時的 cell 左上角 y */
+const DOOR_CELL_Y = FLOOR_Y - 62;
+
+/** 字串雜湊：同一節車廂的人用同一個種子挑小插曲 */
+function hash(s: string) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
 
 /** 收到互動的人看到的提示（只有自己看得到） */
 function receivedToast(kind: GlowKind, listening: boolean, fortune: number | null) {

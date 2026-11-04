@@ -1,9 +1,10 @@
 // 一節車廂＝一個房間：伺服器權威的座位、NPC 與霧氣留言（docs/PRD.md §7.3–7.4）；列車時鐘由 TrainRun 統一驅動
 import { randomUUID } from 'node:crypto';
 import {
-  CARS, isStand, npcIdentity, PAX_STATES, pickSeat, spotColumn, STANDS,
+  CARS, isBigStation, isStand, NEAR_PRIORITY_COLUMNS, npcIdentity, PAX_STATES, pickSeat, PRIORITY_SEATS, SPECIAL_KINDS, SPECIAL_STANDS,
+  specialIdentity, spotColumn, STANDS,
   type AvatarId, type BoardedSnapshot, type Gender, type Mode, type Passenger,
-  type PaxState, type SpotId, type ServerToClient, type WindowNote,
+  type PaxState, type SpecialKind, type SpotId, type ServerToClient, type WindowNote,
 } from '@cc/shared';
 import type { Config } from '../config';
 import type { TrainRun } from './TrainRun';
@@ -16,7 +17,12 @@ export interface ServerPax extends Passenger {
   stateBeforeAway: PaxState | null;
   dnd: boolean;
   lastNoteLeg: number;
+  /** 長者／家長 NPC：再過幾站下車（docs/PRD.md 第 20 章） */
+  special?: { kind: SpecialKind; stationsLeft: number };
 }
+
+/** 大站開門時，長者或家長上車的機率（每節車廂） */
+const SPECIAL_CHANCE = 0.3;
 
 export interface NoteRec extends WindowNote {
   authorSid: string;
@@ -82,7 +88,7 @@ export class Room {
   seatHuman(sid: string, who: Identity, moving?: ServerPax): ServerPax {
     let seat: SpotId | null = pickSeat(this.takenSeats());
     if (!seat) {
-      const npc = [...this.pax.values()].find(p => p.npc && !isStand(p.seat));
+      const npc = [...this.pax.values()].find(p => p.npc && !p.special && !isStand(p.seat));
       if (npc) {
         this.pax.delete(npc.pid);
         this.emit('pax:leave', { pid: npc.pid, reason: 'transfer' });
@@ -120,6 +126,36 @@ export class Room {
     if (!p || p.seat === seat || !this.isFree(seat)) return false;
     p.seat = seat;
     return true;
+  }
+
+  /**
+   * 讓座：真人站到長者／家長的站位，對方坐進真人的座位。
+   * 只有坐在博愛座或隔壁欄的人能讓；回傳真人的新站位，條件不符時為 null。
+   */
+  yieldSeat(pid: string, to: string): SpotId | null {
+    const p = this.pax.get(pid);
+    const n = this.pax.get(to);
+    if (!p || p.npc || isStand(p.seat) || !NEAR_PRIORITY_COLUMNS.has(spotColumn(p.seat))) return null;
+    if (!n?.special || !isStand(n.seat)) return null;
+    [p.seat, n.seat] = [n.seat, p.seat];
+    n.state = 'idle';
+    n.since = Date.now();
+    return p.seat;
+  }
+
+  /** 長者或家長上車：有空的博愛座就坐，否則站在博愛座前拉吊環；站位也滿了就不上車 */
+  boardSpecial(kind: SpecialKind = SPECIAL_KINDS[Math.floor(Math.random() * SPECIAL_KINDS.length)]): ServerPax | null {
+    const seat = [...PRIORITY_SEATS].find(s => this.isFree(s))
+      ?? SPECIAL_STANDS.find(s => this.isFree(s));
+    if (!seat) return null;
+    const p: ServerPax = {
+      pid: `npc_${randomUUID().slice(0, 6)}`, seat, ...specialIdentity(kind, [...this.pax.values()].map(x => x.name)),
+      state: 'idle', since: Date.now(), npc: true,
+      sid: null, awaySince: null, stateBeforeAway: null, dnd: true, lastNoteLeg: -1,
+      special: { kind, stationsLeft: 2 + Math.floor(Math.random() * 2) },
+    };
+    this.pax.set(p.pid, p);
+    return p;
   }
 
   /** 斷線：座位保留，他人眼中變成補眠；到站時若已離線超過寬限時間才下車 */
@@ -203,6 +239,28 @@ export class Room {
       }
     }
     const npc = this.balanceNpcs(true);
+    // 長者與家長：坐滿幾站就下車；有博愛座空出來時，站著的那位坐過去
+    for (const p of [...this.pax.values()]) {
+      if (!p.special) continue;
+      if (--p.special.stationsLeft <= 0) {
+        this.pax.delete(p.pid);
+        npc.leave.push(p.pid);
+        continue;
+      }
+      const free = isStand(p.seat) ? [...PRIORITY_SEATS].find(s => this.isFree(s)) : undefined;
+      if (free) {
+        p.seat = free;
+        this.emit('pax:move', { pid: p.pid, seat: free });
+      }
+    }
+    const index = this.line.stations.findIndex(s => s.code === station);
+    const hasSpecial = [...this.pax.values()].some(p => p.special);
+    if (!hasSpecial && isBigStation(this.line, index) && Math.random() < SPECIAL_CHANCE) {
+      // 大站的人潮：先上來一群人把座位坐滿，長者或家長才會沒位子坐（多出來的人下一站就下車）
+      npc.board.push(...this.rush());
+      const p = this.boardSpecial();
+      if (p) npc.board.push(p);
+    }
     this.emit('train:arrive', {
       station,
       doorsOpenMs: this.run.dwellMs,
@@ -220,7 +278,8 @@ export class Room {
    * churn=true 時（到站）偶爾讓一位 NPC 換人，呈現人來人往。
    */
   private balanceNpcs(churn = false): { leave: string[]; board: ServerPax[] } {
-    const npcs = [...this.pax.values()].filter(p => p.npc);
+    // 長者與家長另外算，不參與熱度補位
+    const npcs = [...this.pax.values()].filter(p => p.npc && !p.special);
     const target = Math.max(0, this.cfg.npcWarmth - this.realCount);
     const leave: string[] = [];
     const board: ServerPax[] = [];
@@ -231,23 +290,38 @@ export class Room {
       this.pax.delete(p.pid);
       leave.push(p.pid);
     }
-    while ([...this.pax.values()].filter(p => p.npc).length < target) {
-      const seat = pickSeat(this.takenSeats());
-      if (!seat) break;
-      const p: ServerPax = {
-        pid: `npc_${randomUUID().slice(0, 6)}`, seat, ...npcIdentity([...this.pax.values()].map(x => x.name)), state: pick(PAX_STATES), since: Date.now(), npc: true,
-        sid: null, awaySince: null, stateBeforeAway: null, dnd: true, lastNoteLeg: -1,
-      };
-      this.pax.set(p.pid, p);
+    while ([...this.pax.values()].filter(p => p.npc && !p.special).length < target) {
+      const p = this.newNpc();
+      if (!p) break;
       board.push(p);
     }
     return { leave, board };
   }
 
+  /** 一位一般 NPC 坐進空位（先避開博愛座）；沒位子時為 null */
+  private newNpc(): ServerPax | null {
+    const seat = pickSeat(this.takenSeats());
+    if (!seat) return null;
+    const p: ServerPax = {
+      pid: `npc_${randomUUID().slice(0, 6)}`, seat, ...npcIdentity([...this.pax.values()].map(x => x.name)), state: pick(PAX_STATES), since: Date.now(), npc: true,
+      sid: null, awaySince: null, stateBeforeAway: null, dnd: true, lastNoteLeg: -1,
+    };
+    this.pax.set(p.pid, p);
+    return p;
+  }
+
+  /** 大站人潮：一般 NPC 把剩下的座位（含博愛座）坐滿 */
+  rush(): ServerPax[] {
+    const out: ServerPax[] = [];
+    for (let p = this.newNpc(); p; p = this.newNpc()) out.push(p);
+    return out;
+  }
+
   /** NPC 偶爾換個姿勢：戴上耳機、翻書、打個盹 */
   private npcFidget() {
     if (this.run.phase !== 'run' || Math.random() < 0.5) return;
-    const npcs = [...this.pax.values()].filter(p => p.npc);
+    // 長者與家長不戴耳機、不打盹換姿勢
+    const npcs = [...this.pax.values()].filter(p => p.npc && !p.special);
     if (npcs.length === 0) return;
     const p = pick(npcs);
     this.setState(p.pid, pick(PAX_STATES.filter(s => s !== p.state)));

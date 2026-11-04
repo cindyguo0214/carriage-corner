@@ -176,3 +176,34 @@
     animation: none;
   }
 }
+
+/* 讓座提示（docs/PRD.md 第 20 章）：只有自己看得到，很淡，慢慢呼吸；點了才讓座 */
+.seat-hint {
+  pointer-events: auto;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgb(30 28 36 / 0.42);
+  color: var(--color-lamp);
+  box-shadow: 0 0 0 1px rgb(217 185 140 / 0.45);
+  animation: seat-hint-breathe 2.4s ease-in-out infinite;
+}
+
+.seat-hint:hover {
+  background: rgb(30 28 36 / 0.75);
+  opacity: 1 !important;
+}
+
+@keyframes seat-hint-breathe {
+  50% {
+    filter: brightness(1.25);
+    box-shadow: 0 0 0 1px rgb(217 185 140 / 0.8), 0 0 8px rgb(217 185 140 / 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat-hint {
+    animation: none;
+  }
+}

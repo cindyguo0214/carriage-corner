@@ -1,6 +1,10 @@
 // 車廂乘客：連線時由伺服器的 pax:* 事件驅動；離線模式由本機模擬 NPC（docs/PRD.md §7.4）
+// 長者與家長（第 20 章）在大站上車：有空的博愛座就坐，否則站著，等人讓座。
 import { Container } from 'pixi.js';
-import { isStand, npcIdentity, PAX_STATES, pickSeat, type Passenger, type PaxState, type SeatId, type SpotId } from '@cc/shared';
+import {
+  isSpecial, isStand, npcIdentity, PAX_STATES, pickSeat, PRIORITY_SEATS, SPECIAL_KINDS, SPECIAL_STANDS, specialIdentity,
+  type Passenger, type PaxState, type SeatId, type SpotId,
+} from '@cc/shared';
 import { Actor, type Label } from './actor';
 import type { CharacterFrames, View } from './characters';
 import { seatCellY, seatX } from './layout';
@@ -14,7 +18,18 @@ export interface Pax {
   actor: Actor;
   emitTimer: number;
   nextChange: number;
+  /** 正在走進車門或演小插曲：位置與動作由車廂場景操控 */
+  scripted?: boolean;
 }
+
+/** 到站時誰下車、誰上車，以及站著的長者改坐空出來的博愛座 */
+export interface Arrival {
+  leave: string[];
+  board: Passenger[];
+  moves: { pid: string; seat: SpotId }[];
+}
+
+export const isSpecialPax = (p: Pax) => p.npc && isSpecial(p.actor.look.avatar);
 
 const viewOf = (seat: SpotId): View => (isStand(seat) || seat[1] === 'A' ? 'front' : 'back');
 /** 站著的人一律舉手拉吊環 */
@@ -30,6 +45,8 @@ export class Passengers {
   private leaving: Actor[] = [];
   private frames: CharacterFrames | undefined;
   private localSeq = 0;
+  /** 離線模式：長者與家長還要坐幾站 */
+  private specialLeft = new Map<string, number>();
 
   /** autonomous：離線模式下 NPC 自己換姿勢、自己上下車 */
   constructor(
@@ -96,7 +113,41 @@ export class Passengers {
     const p = this.get(pid);
     if (!p || p.state === state) return;
     p.state = state;
-    p.actor.setAnim(animOf(p.seat, state));
+    if (!p.scripted) p.actor.setAnim(animOf(p.seat, state));
+  }
+
+  /** 把角色交給車廂場景操控（走進車門、演小插曲）：先移到走道那一層 */
+  hold(pid: string) {
+    const p = this.get(pid);
+    if (!p) return null;
+    p.scripted = true;
+    this.standRow.addChild(p.actor.sprite);
+    return p.actor;
+  }
+
+  /** 操控結束：回到自己的位子坐好（或站好） */
+  settle(pid: string) {
+    const p = this.get(pid);
+    if (!p) return;
+    p.scripted = false;
+    (isStand(p.seat) ? this.standRow : p.seat[1] === 'A' ? this.backRow : this.frontRow).addChild(p.actor.sprite);
+    p.actor.placeAt(seatX(p.seat), seatCellY(p.seat));
+    p.actor.setAnim(animOf(p.seat, p.state), viewOf(p.seat));
+  }
+
+  /** 下車的人：從名單拿出來，由車廂場景帶到車門口，最後自己淡出 */
+  detach(pid: string) {
+    const p = this.get(pid);
+    if (!p) return null;
+    this.list = this.list.filter(x => x !== p);
+    this.standRow.addChild(p.actor.sprite);
+    this.leaving.push(p.actor);
+    return p.actor;
+  }
+
+  /** 站著、還沒人讓座的長者與家長 */
+  standingSpecials(): Pax[] {
+    return this.list.filter(p => isSpecialPax(p) && isStand(p.seat) && !p.scripted);
   }
 
   /** 拉吊環的人：車廂場景據此畫出吊環 */
@@ -118,14 +169,66 @@ export class Passengers {
     });
   }
 
-  /** 離線模式到站：部分 NPC 下車、部分上車 */
-  shuffleLocalAtStation() {
-    const npcs = this.list.filter(p => p.npc);
-    const leaving = npcs.filter(() => Math.random() < 0.3).slice(0, 2);
-    leaving.forEach(p => this.remove(p.pid));
-    const target = 4 + Math.floor(Math.random() * 3);
-    const boarding = Math.max(0, target - (npcs.length - leaving.length));
-    for (let i = 0; i < Math.min(2, boarding); i++) this.boardLocalNpc();
+  /**
+   * 離線模式到站：決定誰下車、誰上車（由車廂場景套用，才能演小插曲）。
+   * 長者與家長坐滿幾站下車；大站時偶爾有一位上車（docs/PRD.md 第 20 章）。
+   */
+  planLocalArrival(bigStation: boolean): Arrival {
+    const leave: string[] = [];
+    const regular = this.list.filter(p => p.npc && !isSpecialPax(p));
+    // 人潮過後：比平常多的人在這站陸續下車
+    const crowd = Math.max(0, regular.length - 6);
+    regular.filter(() => Math.random() < 0.3).slice(0, 2).forEach(p => leave.push(p.pid));
+    regular.filter(p => !leave.includes(p.pid)).sort(() => Math.random() - 0.5).slice(0, crowd).forEach(p => leave.push(p.pid));
+    for (const p of this.list.filter(isSpecialPax)) {
+      const left = (this.specialLeft.get(p.pid) ?? 1) - 1;
+      this.specialLeft.set(p.pid, left);
+      if (left <= 0) leave.push(p.pid);
+    }
+    const staying = this.list.filter(p => !leave.includes(p.pid));
+    const taken: SpotId[] = staying.map(p => p.seat);
+    const free = (s: SpotId) => !taken.includes(s);
+    const moves: Arrival['moves'] = [];
+    for (const p of staying.filter(x => isSpecialPax(x) && isStand(x.seat))) {
+      const seat = [...PRIORITY_SEATS].find(free);
+      if (!seat) continue;
+      taken.push(seat);
+      moves.push({ pid: p.pid, seat });
+    }
+
+    const board: Passenger[] = [];
+    const want = 4 + Math.floor(Math.random() * 3) - staying.filter(p => p.npc && !isSpecialPax(p)).length;
+    for (let i = 0; i < Math.min(2, want); i++) if (!this.planNpc(board, taken)) break;
+    if (bigStation && !staying.some(isSpecialPax) && Math.random() < 0.3) {
+      // 大站的人潮：先上來一群人把座位坐滿，長者或家長才會沒位子坐（多出來的人之後陸續下車）
+      while (this.planNpc(board, taken));
+      this.planSpecial(board, taken);
+    }
+    return { leave, board, moves };
+  }
+
+  /** 一位一般 NPC 坐進空位（先避開博愛座）；沒位子時回傳 false */
+  private planNpc(board: Passenger[], taken: SpotId[]) {
+    const seat = pickSeat(taken);
+    if (!seat) return false;
+    taken.push(seat);
+    board.push({
+      pid: `local_${++this.localSeq}`, seat, ...npcIdentity([...this.list.map(p => p.actor.look.name), ...board.map(b => b.name)]),
+      state: PAX_STATES[Math.floor(Math.random() * PAX_STATES.length)], since: Date.now(), npc: true,
+    });
+    return true;
+  }
+
+  /** 離線模式：一位長者或家長上車（開發時也用來直接叫一位上車） */
+  planSpecial(board: Passenger[], taken: SpotId[] = this.list.map(p => p.seat)) {
+    const free = (s: SpotId) => !taken.includes(s);
+    const seat = [...PRIORITY_SEATS].find(free) ?? SPECIAL_STANDS.find(free);
+    if (!seat) return;
+    const kind = SPECIAL_KINDS[Math.floor(Math.random() * SPECIAL_KINDS.length)];
+    const pid = `local_${++this.localSeq}`;
+    this.specialLeft.set(pid, 2 + Math.floor(Math.random() * 2));
+    taken.push(seat);
+    board.push({ pid, seat, ...specialIdentity(kind, this.list.map(p => p.actor.look.name)), state: 'idle', since: Date.now(), npc: true });
   }
 
   labels(out: Label[]) {
@@ -143,7 +246,7 @@ export class Passengers {
   update(dt: number) {
     for (const p of this.list) {
       p.actor.update(dt, this.frames);
-      if (this.autonomous && p.npc) {
+      if (this.autonomous && p.npc && !isSpecialPax(p)) {
         p.nextChange -= dt;
         if (p.nextChange <= 0) {
           p.nextChange = 40 + Math.random() * 90;

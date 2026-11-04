@@ -34,6 +34,8 @@ function buildStats(): TicketStats | null {
     pomodoros: s.pomodorosDone,
     received: s.received,
     fortune: s.lastFortune,
+    yielded: s.yielded.count,
+    yieldedTo: s.yielded.to,
     coRiders: s.ride.coRiders,
     quote: 0,
     mode: s.mode,

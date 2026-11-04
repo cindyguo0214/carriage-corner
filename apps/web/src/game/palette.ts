@@ -80,6 +80,16 @@ const OUTFITS: Record<AvatarId, Record<Gender, Outfit>> = {
     m: { top: '#8FA595', topLo: '#788E7F', bottom: '#5F6568', hair: '#6A5548', acc: '#C98BA0' },
     f: { top: '#D8C49A', topLo: '#BCA87E', bottom: '#5F6568', hair: '#3D3836', acc: '#7FA9A3' },
   },
+  // 長者：灰髮、針織外套；acc 是阿公的鴨舌帽
+  elder: {
+    m: { top: '#8C9180', topLo: '#767B6B', bottom: '#5F6064', hair: '#BDB7B0', acc: '#6E6A64' },
+    f: { top: '#9A8494', topLo: '#82707E', bottom: '#6E6A70', hair: '#C9C3BC', acc: '#9A8494' },
+  },
+  // 家長：acc 是牽著的小朋友的上衣
+  parent: {
+    m: { top: '#7F98A6', topLo: '#68808E', bottom: '#5E6470', hair: '#3D3836', acc: '#E3C27A' },
+    f: { top: '#C49A8E', topLo: '#A9827A', bottom: '#5F6470', hair: '#4A3E3A', acc: '#E3C27A' },
+  },
 };
 
 /** 夜間把衣著壓暗一階（之後改為 Palette Swap Shader） */

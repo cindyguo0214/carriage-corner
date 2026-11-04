@@ -37,6 +37,12 @@ const CarReq = z.object({ dir: z.union([z.literal(-1), z.literal(1)]) });
 const NoteReq = z.object({ text: z.string().max(200) });
 const NidReq = z.object({ nid: z.string().max(32) });
 const PrefReq = z.object({ dnd: z.boolean() });
+const YieldReq = z.object({ to: z.string().max(32) });
+
+/** 影子靜音（docs/PRD.md 第 20 章）：5 分鐘內被擋下 3 次就靜音 10 分鐘，期間送出的互動都被霧氣吸收 */
+const SHADOW_STRIKES = 3;
+const SHADOW_WINDOW_MS = 5 * 60_000;
+const SHADOW_MUTE_MS = 10 * 60_000;
 
 const BAD = { ok: false, code: 'BAD_REQUEST' } as const;
 const LIMITED = { ok: false, code: 'RATE_LIMITED' } as const;
@@ -83,8 +89,13 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
   const limiter = new Limiter();
   const moderation = new Moderation();
   const sessions = new Sessions(cfg.tokenSecret);
+  /** sid → 影子靜音到何時 */
+  const shadowMuted = new Map<string, number>();
   const tickets = new TicketSigner(cfg.tokenSecret);
-  const sweeper = setInterval(() => limiter.sweep(), 10 * 60_000);
+  const sweeper = setInterval(() => {
+    limiter.sweep();
+    for (const [sid, until] of shadowMuted) if (until < Date.now()) shadowMuted.delete(sid);
+  }, 10 * 60_000);
 
   io.on('connection', socket => {
     const current = () => {
@@ -153,6 +164,21 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
       ack({ ok: true });
     });
 
+    socket.on('seat:yield', (raw, ack) => {
+      const req = YieldReq.safeParse(raw);
+      const ctx = current();
+      if (!req.success || !ctx) return ack(BAD);
+      if (!limiter.take(`seat:${ctx.pax.pid}`, 6, 60_000)) return ack(LIMITED);
+      const npcSeat = ctx.room.pax.get(req.data.to)?.seat;
+      const seat = ctx.room.yieldSeat(ctx.pax.pid, req.data.to);
+      if (!seat || !npcSeat) return ack({ ok: false, code: 'NO_TARGET' });
+      // 讓座的人自己的動畫在 ack 後播放；其他人看到兩人換位、對方道謝
+      socket.to(ctx.room.id).emit('pax:move', { pid: ctx.pax.pid, seat });
+      socket.to(ctx.room.id).emit('pax:move', { pid: req.data.to, seat: ctx.room.pax.get(req.data.to)!.seat });
+      socket.to(ctx.room.id).emit('pax:thanks', { pid: req.data.to });
+      ack({ ok: true, data: { seat } });
+    });
+
     socket.on('car:move', async (raw, ack) => {
       const req = CarReq.safeParse(raw);
       const ctx = current();
@@ -189,13 +215,21 @@ export function createRealtimeServer(cfg: Config): RealtimeServer {
       if (!target || target.pid === pid) return ack({ ok: false, code: 'NO_TARGET' });
       // 小毯只能蓋給正在補眠的人
       if (req.data.kind === 'blanket' && target.state !== 'sleep') return ack({ ok: false, code: 'NO_TARGET' });
-      const allowed =
-        limiter.take(`glow:${pid}`, 10, 60_000) && limiter.take(`glow:${pid}>${req.data.to}`, 1, 120_000);
-      if (!allowed) return ack(LIMITED);
+      // 太頻繁的互動不回絕、也不吵架：送出者照常看到動畫，但不會送到任何人那裡（影子靜音）
+      const sid = socket.data.sid!;
+      let absorbed = (shadowMuted.get(sid) ?? 0) > Date.now();
+      if (!absorbed) {
+        const allowed =
+          limiter.take(`glow:${pid}`, 10, 60_000) && limiter.take(`glow:${pid}>${req.data.to}`, 2, 120_000);
+        if (!allowed) {
+          absorbed = true;
+          if (!limiter.take(`glow-strike:${sid}`, SHADOW_STRIKES - 1, SHADOW_WINDOW_MS)) shadowMuted.set(sid, Date.now() + SHADOW_MUTE_MS);
+        }
+      }
       const fortune = req.data.kind === 'fortune' ? Math.floor(Math.random() * FORTUNES.length) : null;
       // 廣播不帶送出者；送出者自己的動畫由用戶端在 ack 後播放，所以排除送出者
-      if (!target.dnd) socket.to(ctx.room.id).emit('glow', { to: target.pid, kind: req.data.kind, at: Date.now(), fortune });
-      ack({ ok: true, data: { fortune } }); // 對方開勿擾時仍回成功，送出者不會感覺被拒絕
+      if (!absorbed && !target.dnd) socket.to(ctx.room.id).emit('glow', { to: target.pid, kind: req.data.kind, at: Date.now(), fortune });
+      ack({ ok: true, data: { fortune } }); // 對方開勿擾或被靜音時仍回成功，送出者不會感覺被拒絕
     });
 
     socket.on('note:write', (raw, ack) => {

@@ -29,6 +29,8 @@ export class NameLabels {
       node.el.classList.toggle('name-label--self', l.self);
       node.el.classList.toggle('gangway-sign', !!l.sign);
       node.el.classList.toggle('name-label--pop', !!l.pop);
+      node.el.classList.toggle('seat-hint', !!l.hint);
+      if (l.hint) node.el.onclick = l.hint;
       if (l.sign) {
         node.el.onclick = l.sign.action;
         node.el.style.setProperty('--nudge', l.sign.align === 'left' ? '-4px' : '4px');
